@@ -222,6 +222,23 @@ export default function DoctorDashboard() {
                             <Video className="w-3.5 h-3.5" />
                             <span>Enter Room</span>
                           </Link>
+                          <button
+                            onClick={() => handleStatus(apt._id, 'completed')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                            title="Mark completed directly (even if ahead of schedule)"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Complete</span>
+                          </button>
+                          <button
+                            onClick={() => handleStatus(apt._id, 'incomplete')}
+                            disabled={!!actionLoading}
+                            className="px-2 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                            title="Mark incomplete if call dropped or unfulfilled"
+                          >
+                            Incomplete
+                          </button>
                           <Link
                             to={`/doctor/prescription/${apt._id}`}
                             className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-blue-500 transition-colors"
@@ -241,6 +258,21 @@ export default function DoctorDashboard() {
                             <Video className="w-3.5 h-3.5" />
                             <span>Re-Enter Room</span>
                           </Link>
+                          <button
+                            onClick={() => handleStatus(apt._id, 'completed')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Mark Complete</span>
+                          </button>
+                          <button
+                            onClick={() => handleStatus(apt._id, 'incomplete')}
+                            disabled={!!actionLoading}
+                            className="px-2 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                          >
+                            Incomplete
+                          </button>
                           <Link
                             to={`/doctor/prescription/${apt._id}`}
                             className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-blue-500 transition-colors"

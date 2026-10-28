@@ -55,6 +55,43 @@ router.get('/specializations', async (req, res) => {
   }
 });
 
+// GET /api/doctors/my/patients — Get full directory of all patients who have consulted with this doctor
+router.get('/my/patients', auth, doctorOnly, async (req, res) => {
+  try {
+    const appointments = await Appointment.find({ doctor: req.user._id })
+      .populate('patient', 'name email phone gender dateOfBirth bloodGroup address emergencyContact profileImage createdAt')
+      .populate('prescription')
+      .populate('consultationSession')
+      .sort({ date: -1 });
+
+    const patientMap = new Map();
+    for (const apt of appointments) {
+      if (!apt.patient) continue;
+      const pId = apt.patient._id.toString();
+      if (!patientMap.has(pId)) {
+        patientMap.set(pId, {
+          patient: apt.patient,
+          totalAppointments: 0,
+          appointments: [],
+          prescriptions: []
+        });
+      }
+      const pData = patientMap.get(pId);
+      pData.totalAppointments++;
+      pData.appointments.push(apt);
+      if (apt.prescription) {
+        pData.prescriptions.push(apt.prescription);
+      }
+    }
+
+    const patients = Array.from(patientMap.values());
+    res.json({ patients });
+  } catch (err) {
+    console.error('Get doctor patients error:', err);
+    res.status(500).json({ message: 'Server error fetching patient directory.' });
+  }
+});
+
 // GET /api/doctors/:id — Get single doctor
 router.get('/:id', async (req, res) => {
   try {
@@ -88,10 +125,13 @@ router.get('/:id/availability', async (req, res) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayOfWeek = days[queryDate.getDay()];
 
-    // Get doctor's active slots for this day
-    const daySlots = (doctor.availableSlots || []).filter(
-      slot => slot.day === dayOfWeek && slot.isActive
-    );
+    // Get doctor's active slots for this day: match specific calendar date OR recurring day of week
+    const daySlots = (doctor.availableSlots || []).filter(slot => {
+      if (!slot.isActive) return false;
+      if (slot.date && slot.date === date) return true;
+      if (slot.day === dayOfWeek && (!slot.date || slot.date === '')) return true;
+      return false;
+    });
 
     // Get existing appointments for this doctor on this date
     const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
@@ -152,13 +192,36 @@ router.put('/schedule', auth, doctorOnly, async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
-    const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 };
+    // Validate all slots: start time must be strictly before end time
+    for (const slot of availableSlots) {
+      const start = slot.startTime || slot.start;
+      const end = slot.endTime || slot.end;
+      if (!start || !end) {
+        return res.status(400).json({ message: 'Each slot must have a start time and an end time.' });
+      }
+      if (start >= end) {
+        return res.status(400).json({ 
+          message: `Invalid slot time: End time (${end}) must be strictly after start time (${start}). Reverse ranges (e.g. 9:00 PM to 8:00 PM) are prohibited.` 
+        });
+      }
+    }
+
+    const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7, 'Specific Date': 8 };
     const cleanedSlots = availableSlots.map(s => ({
-      day: s.day,
+      day: s.day || (s.date ? 'Specific Date' : 'Monday'),
+      date: s.date || null,
       startTime: s.startTime || s.start,
       endTime: s.endTime || s.end,
       isActive: s.isActive !== false
-    })).sort((a, b) => (dayOrder[a.day] - dayOrder[b.day]) || (a.startTime || '').localeCompare(b.startTime || ''));
+    })).sort((a, b) => {
+      if (a.date && b.date) {
+        const dComp = a.date.localeCompare(b.date);
+        if (dComp !== 0) return dComp;
+      }
+      const dayDiff = (dayOrder[a.day] || 9) - (dayOrder[b.day] || 9);
+      if (dayDiff !== 0) return dayDiff;
+      return (a.startTime || '').localeCompare(b.startTime || '');
+    });
 
     doctor.availableSlots = cleanedSlots;
     await doctor.save();

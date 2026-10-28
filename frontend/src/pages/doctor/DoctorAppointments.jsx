@@ -119,6 +119,7 @@ export default function DoctorAppointments() {
               { id: 'confirmed', label: 'Confirmed' },
               { id: 'in-progress', label: 'In-Progress (Active)' },
               { id: 'completed', label: 'Completed' },
+              { id: 'incomplete', label: 'Incomplete' },
               { id: 'cancelled', label: 'Cancelled' },
             ].map(tab => (
               <button
@@ -257,34 +258,86 @@ export default function DoctorAppointments() {
                         <>
                           <Link
                             to={`/doctor/consultation/${apt._id}`}
-                            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
+                            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
                           >
                             <Video className="w-3.5 h-3.5" />
-                            <span>Enter Video Call Room</span>
+                            <span>Enter Call</span>
                           </Link>
+                          <button
+                            onClick={() => handleStatusUpdate(apt._id, 'completed')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                            title="Mark completed directly if consultation finished early"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Mark Complete</span>
+                          </button>
+                          <button
+                            onClick={() => handleStatusUpdate(apt._id, 'incomplete')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                            title="Mark incomplete if call was dropped or unattended"
+                          >
+                            <span>Incomplete</span>
+                          </button>
                           <button
                             onClick={() => handleStatusUpdate(apt._id, 'cancelled')}
                             disabled={!!actionLoading}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 transition-colors"
+                            className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-400 hover:text-rose-600 transition-colors"
                           >
                             Cancel
                           </button>
                         </>
                       )}
 
-                      {/* 3. In-Progress Actions: Rejoin Option */}
+                      {/* 3. In-Progress Actions: Rejoin, Complete, or Incomplete */}
                       {apt.status === 'in-progress' && (
-                        <Link
-                          to={`/doctor/consultation/${apt._id}`}
-                          className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all hover:scale-105"
-                          title="Rejoin active consultation after accidental drop"
-                        >
-                          <Video className="w-3.5 h-3.5" />
-                          <span>Rejoin Active Call Room</span>
-                        </Link>
+                        <>
+                          <Link
+                            to={`/doctor/consultation/${apt._id}`}
+                            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all hover:scale-105"
+                            title="Rejoin active consultation after accidental drop"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>Rejoin Call</span>
+                          </Link>
+                          <button
+                            onClick={() => handleStatusUpdate(apt._id, 'completed')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                            title="Conclude and mark completed"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Complete</span>
+                          </button>
+                          <button
+                            onClick={() => handleStatusUpdate(apt._id, 'incomplete')}
+                            disabled={!!actionLoading}
+                            className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors"
+                            title="Mark incomplete if dropped"
+                          >
+                            <span>Mark Incomplete</span>
+                          </button>
+                        </>
                       )}
 
-                      {/* 4. Completed Actions: Strict prohibition on rejoining */}
+                      {/* 4. Incomplete Status Badge & Re-open */}
+                      {apt.status === 'incomplete' && (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                            Marked Incomplete
+                          </span>
+                          <button
+                            onClick={() => handleStatusUpdate(apt._id, 'confirmed')}
+                            disabled={!!actionLoading}
+                            className="text-xs font-bold text-blue-600 hover:underline"
+                          >
+                            Re-Open
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 5. Completed Actions: Strict prohibition on rejoining */}
                       {apt.status === 'completed' && (
                         <span className="flex items-center space-x-1 text-xs text-slate-400 font-semibold italic">
                           <Check className="w-3.5 h-3.5 text-emerald-500" />

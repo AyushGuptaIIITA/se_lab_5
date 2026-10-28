@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Stethoscope, LayoutDashboard, Calendar, Search, FileText, Users, BarChart3, Shield, LogOut, User, Globe, Menu, X, Sparkles, Video } from 'lucide-react';
+import { Stethoscope, LayoutDashboard, Calendar, Search, FileText, Users, BarChart3, Shield, LogOut, User, Globe, Menu, X, Sparkles, Video, Pill } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -35,11 +35,13 @@ export default function Navbar() {
       { to: '/patient/dashboard', icon: LayoutDashboard, label: t('dashboard') },
       { to: '/patient/search-doctors', icon: Search, label: t('searchDoctors') },
       { to: '/patient/appointments', icon: Video, label: 'My Appointments' },
+      { to: '/patient/prescriptions', icon: Pill, label: 'My Prescriptions' },
       { to: '/patient/medical-records', icon: FileText, label: t('medicalRecords') },
     ],
     doctor: [
       { to: '/doctor/dashboard', icon: LayoutDashboard, label: t('dashboard') },
       { to: '/doctor/appointments', icon: Video, label: 'My Consultations' },
+      { to: '/doctor/patients', icon: Users, label: 'Patient Directory' },
       { to: '/doctor/schedule', icon: Calendar, label: t('schedule') },
       { to: '/doctor/prescription', icon: FileText, label: 'e-Prescription' },
     ],

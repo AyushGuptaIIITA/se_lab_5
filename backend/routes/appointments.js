@@ -181,13 +181,14 @@ router.patch('/:id/status', auth, async (req, res) => {
 
     const userId = req.user._id.toString();
 
-    // Authorization: doctors can confirm/cancel, patients can cancel
+    // Authorization: doctors can confirm/complete/incomplete/cancel, patients can cancel
     if (req.user.role === 'doctor') {
       if (appointment.doctor._id.toString() !== userId) {
         return res.status(403).json({ message: 'Access denied.' });
       }
-      if (!['confirmed', 'cancelled'].includes(status)) {
-        return res.status(400).json({ message: 'Doctors can only confirm or cancel appointments.' });
+      const allowedDoctorStatuses = ['confirmed', 'in-progress', 'completed', 'incomplete', 'cancelled', 'rescheduled'];
+      if (!allowedDoctorStatuses.includes(status)) {
+        return res.status(400).json({ message: `Invalid status. Doctor can set: ${allowedDoctorStatuses.join(', ')}` });
       }
     } else if (req.user.role === 'patient') {
       if (appointment.patient._id.toString() !== userId) {
@@ -206,6 +207,18 @@ router.patch('/:id/status', auth, async (req, res) => {
     }
 
     await appointment.save();
+
+    // If marked completed or incomplete or cancelled, also conclude active consultation session
+    if (['completed', 'incomplete', 'cancelled'].includes(status)) {
+      const ConsultationSession = require('../models/ConsultationSession');
+      await ConsultationSession.updateMany(
+        { appointment: appointment._id, status: 'in-progress' },
+        { 
+          status: status === 'completed' ? 'completed' : 'ended', 
+          endedAt: new Date() 
+        }
+      );
+    }
 
     // Create audit log
     await createAuditLog(

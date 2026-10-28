@@ -4,9 +4,10 @@ const bcrypt = require('bcryptjs');
 const availableSlotSchema = new mongoose.Schema({
   day: {
     type: String,
-    enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-    required: true
+    enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Specific Date'],
+    default: 'Monday'
   },
+  date: { type: String }, // YYYY-MM-DD for specific calendar date slots
   startTime: { type: String, required: true },
   endTime: { type: String, required: true },
   isActive: { type: Boolean, default: true }
