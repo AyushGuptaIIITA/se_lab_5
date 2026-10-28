@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Stethoscope, User, Mail, Lock, Phone, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
+import { Stethoscope, User, Mail, Lock, Phone, Eye, EyeOff, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import AlertBanner from '../components/AlertBanner';
@@ -13,16 +13,16 @@ function PasswordStrength({ password }) {
   if (password.length >= 10) score++;
   if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
-  const colors = ['bg-rose-500', 'bg-amber-500', 'bg-blue-500', 'bg-emerald-500'];
+  const colors = ['bg-rose-500', 'bg-amber-500', 'bg-teal-500', 'bg-emerald-500'];
   const labels = ['Weak', 'Fair', 'Good', 'Strong'];
   return password ? (
     <div className="mt-1.5">
       <div className="grid grid-cols-4 gap-1 h-1.5 mb-1">
         {[0,1,2,3].map(i => (
-          <div key={i} className={`rounded-full transition-colors ${i < score ? colors[score-1] : 'bg-slate-800'}`} />
+          <div key={i} className={`rounded-full transition-colors ${i < score ? colors[score-1] : 'bg-gray-200'}`} />
         ))}
       </div>
-      <span className="text-[11px] text-slate-400">{labels[score-1] || 'Enter password'}</span>
+      <span className="text-[11px] text-gray-500">{labels[score-1] || 'Enter password'}</span>
     </div>
   ) : null;
 }
@@ -59,28 +59,44 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/8 rounded-full blur-3xl pointer-events-none" />
-      <div className="relative w-full max-w-lg my-8">
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-teal-600 to-indigo-500 shadow-xl mb-3">
-            <Stethoscope className="w-7 h-7 text-white" />
+    <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-[#f8f9fa]">
+      <div className="w-full max-w-lg text-center mb-5 mt-4">
+        <div className="inline-flex items-center justify-center space-x-2 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#ff6f61] to-[#fe8d00] flex items-center justify-center shadow-md">
+            <Stethoscope className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-2xl font-extrabold text-white">{t('register')}</h1>
-          <p className="text-sm text-slate-400 mt-1">{t('tagline')}</p>
+          <span className="text-3xl font-extrabold text-[#ff6f61] tracking-tight">
+            TATA <span className="text-[#10847e]">1mg</span>
+          </span>
         </div>
+        <p className="text-sm font-semibold text-gray-700">Create your 1mg Telehealth Account</p>
+      </div>
 
-        <div className="glass-panel p-6 sm:p-8 rounded-2xl shadow-2xl space-y-5">
+      <div className="relative w-full max-w-lg mb-8">
+        <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-lg border border-gray-200/80 space-y-5">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">{t('register')}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Join India's leading digital health consultation network</p>
+          </div>
+
           {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Role selector */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">{t('selectRole')}</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">{t('selectRole')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {['patient', 'doctor', 'admin'].map(r => (
-                  <button key={r} type="button" onClick={() => setForm(f => ({ ...f, role: r }))}
-                    className={`p-3 rounded-xl border text-xs font-semibold capitalize transition-all ${form.role === r ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'}`}>
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, role: r }))}
+                    className={`p-3 rounded-xl border text-xs font-bold capitalize transition-all ${
+                      form.role === r
+                        ? 'bg-[#fff4f2] border-[#ff6f61] text-[#ff6f61] shadow-xs'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
                     {r === 'patient' ? '👤' : r === 'doctor' ? '🩺' : '⚡'} {t(r)}
                   </button>
                 ))}
@@ -94,23 +110,39 @@ export default function Register() {
               { field: 'phone', label: t('phone'), type: 'tel', icon: <Phone className="w-4 h-4" />, placeholder: '+91 98765 43210' },
             ].map(({ field, label, type, icon, placeholder }) => (
               <div key={field}>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">{label}</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{label}</label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">{icon}</div>
-                  <input type={type} required={field !== 'phone'} placeholder={placeholder} value={form[field]} onChange={set(field)}
-                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none" />
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">{icon}</div>
+                  <input
+                    type={type}
+                    required={field !== 'phone'}
+                    placeholder={placeholder}
+                    value={form[field]}
+                    onChange={set(field)}
+                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                  />
                 </div>
               </div>
             ))}
 
             {/* Password */}
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">{t('password')}</label>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('password')}</label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input type={showPass ? 'text' : 'password'} required placeholder="Min 6 characters" value={form.password} onChange={set('password')}
-                  className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none" />
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  required
+                  placeholder="Min 6 characters"
+                  value={form.password}
+                  onChange={set('password')}
+                  className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
@@ -119,84 +151,142 @@ export default function Register() {
 
             {/* Doctor-specific fields */}
             {form.role === 'doctor' && (
-              <div className="space-y-3 p-4 rounded-xl bg-emerald-900/10 border border-emerald-800/30">
-                <p className="text-xs font-semibold text-emerald-400 uppercase">Doctor Details</p>
+              <div className="space-y-3 p-4 rounded-xl bg-orange-50/60 border border-orange-200">
+                <p className="text-xs font-bold text-[#ff6f61] uppercase">Doctor Professional Details</p>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('specialization')}</label>
-                  <select value={form.specialization} onChange={set('specialization')} required
-                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('specialization')}</label>
+                  <select
+                    value={form.specialization}
+                    onChange={set('specialization')}
+                    required
+                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                  >
                     <option value="">Select specialization...</option>
                     {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
-                  <input type="text" required placeholder="MCI-12345" value={form.licenseNumber} onChange={set('licenseNumber')}
-                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="MCI-12345"
+                    value={form.licenseNumber}
+                    onChange={set('licenseNumber')}
+                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('consultationFee')}</label>
-                  <input type="number" placeholder="200" value={form.consultationFee} onChange={set('consultationFee')}
-                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('consultationFee')} (₹)</label>
+                  <input
+                    type="number"
+                    placeholder="200"
+                    value={form.consultationFee}
+                    onChange={set('consultationFee')}
+                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('bio')}</label>
-                  <textarea rows={2} placeholder="Brief professional bio..." value={form.bio} onChange={set('bio')}
-                    className="glass-input w-full px-3 py-2 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none resize-none" />
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bio')}</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Brief professional bio..."
+                    value={form.bio}
+                    onChange={set('bio')}
+                    className="glass-input w-full px-3 py-2 rounded-xl text-sm bg-white resize-none"
+                  />
                 </div>
               </div>
             )}
 
             {/* Patient-specific fields */}
             {form.role === 'patient' && (
-              <div className="space-y-3 p-4 rounded-xl bg-blue-900/10 border border-blue-800/30">
-                <p className="text-xs font-semibold text-blue-400 uppercase">Patient Details</p>
+              <div className="space-y-3 p-4 rounded-xl bg-teal-50/60 border border-teal-200">
+                <p className="text-xs font-bold text-[#10847e] uppercase">Patient Profile Information</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('gender')}</label>
-                    <select value={form.gender} onChange={set('gender')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('gender')}</label>
+                    <select
+                      value={form.gender}
+                      onChange={set('gender')}
+                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                    >
                       <option value="male">{t('male')}</option>
                       <option value="female">{t('female')}</option>
                       <option value="other">{t('other')}</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
-                    <select value={form.bloodGroup} onChange={set('bloodGroup')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
+                    <select
+                      value={form.bloodGroup}
+                      onChange={set('bloodGroup')}
+                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                    >
                       <option value="">Select...</option>
                       {['A+','A-','B+','B-','O+','O-','AB+','AB-'].map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('village')}</label>
-                  <input type="text" placeholder="Village name" value={form.village} onChange={set('village')}
-                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('village')}</label>
+                  <input
+                    type="text"
+                    placeholder="Village / Town"
+                    value={form.village}
+                    onChange={set('village')}
+                    className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('district')}</label>
-                    <input type="text" placeholder="District" value={form.district} onChange={set('district')}
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('district')}</label>
+                    <input
+                      type="text"
+                      placeholder="District"
+                      value={form.district}
+                      onChange={set('district')}
+                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                    />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('state')}</label>
-                    <input type="text" placeholder="State" value={form.state} onChange={set('state')}
-                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('state')}</label>
+                    <input
+                      type="text"
+                      placeholder="State"
+                      value={form.state}
+                      onChange={set('state')}
+                      className="glass-input w-full px-3 py-2.5 rounded-xl text-sm bg-white"
+                    />
                   </div>
                 </div>
               </div>
             )}
 
-            <button type="submit" disabled={loading}
-              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50">
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Creating...</span></> : <><span>{t('register')}</span><ArrowRight className="w-4 h-4" /></>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-md shadow-[#ff6f61]/25 active:scale-[0.99] transition-all disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creating account...</span>
+                </>
+              ) : (
+                <>
+                  <span>{t('register')}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
-          <div className="text-center text-xs text-slate-400">
+          <div className="text-center text-xs text-gray-600">
             {t('alreadyHaveAccount')}{' '}
-            <Link to="/" className="font-semibold text-indigo-400 hover:text-indigo-300">{t('login')}</Link>
+            <Link to="/" className="font-bold text-[#ff6f61] hover:underline">
+              {t('login')}
+            </Link>
           </div>
         </div>
       </div>

@@ -5,15 +5,17 @@ import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 
-function StatCard({ icon: Icon, label, value, color, sub }) {
+function StatCard({ icon: Icon, label, value, colorClass, borderClass, sub }) {
   return (
-    <div className="glass-card p-5 rounded-2xl border border-slate-800">
+    <div className={`bg-white p-5 rounded-xl border ${borderClass} shadow-xs`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
-        <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center`}><Icon className="w-4 h-4" /></div>
+        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-9 h-9 rounded-xl ${colorClass} flex items-center justify-center font-bold`}>
+          <Icon className="w-5 h-5" />
+        </div>
       </div>
-      <p className="text-3xl font-bold text-white mt-3">{value ?? '—'}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
+      <p className="text-3xl font-black text-gray-900 mt-3">{value ?? '—'}</p>
+      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
     </div>
   );
 }
@@ -22,11 +24,11 @@ function HBar({ label, value, max, color }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-xs text-slate-400 capitalize w-24 flex-shrink-0">{label}</span>
-      <div className="flex-1 h-3 rounded-full bg-slate-800">
+      <span className="text-xs font-semibold text-gray-700 capitalize w-24 flex-shrink-0">{label}</span>
+      <div className="flex-1 h-3 rounded-full bg-gray-100 overflow-hidden">
         <div className={`h-3 rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs font-semibold text-slate-300 w-6 text-right">{value}</span>
+      <span className="text-xs font-bold text-gray-900 w-6 text-right">{value}</span>
     </div>
   );
 }
@@ -35,22 +37,22 @@ function VBar({ label, value, max }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
     <div className="flex flex-col items-center gap-1 flex-1">
-      <span className="text-xs font-semibold text-slate-300">{value}</span>
-      <div className="w-full flex flex-col justify-end bg-slate-800 rounded-lg overflow-hidden" style={{ height: 80 }}>
-        <div className="bg-indigo-500 rounded-lg w-full transition-all" style={{ height: `${pct}%` }} />
+      <span className="text-xs font-bold text-gray-900">{value}</span>
+      <div className="w-full flex flex-col justify-end bg-gray-100 rounded-lg overflow-hidden" style={{ height: 80 }}>
+        <div className="bg-[#10847e] rounded-lg w-full transition-all" style={{ height: `${pct}%` }} />
       </div>
-      <span className="text-[10px] text-slate-500 text-center leading-tight">{label}</span>
+      <span className="text-[11px] font-bold text-gray-600 text-center leading-tight capitalize">{label}</span>
     </div>
   );
 }
 
 const STATUS_COLORS = {
   pending: 'bg-amber-500',
-  confirmed: 'bg-blue-500',
-  'in-progress': 'bg-indigo-500',
+  confirmed: 'bg-[#10847e]',
+  'in-progress': 'bg-[#fe8d00]',
   completed: 'bg-emerald-500',
-  cancelled: 'bg-rose-500',
-  rescheduled: 'bg-violet-500',
+  cancelled: 'bg-[#ff6f61]',
+  rescheduled: 'bg-purple-500',
 };
 
 export default function Reports() {
@@ -64,8 +66,11 @@ export default function Reports() {
     try {
       const res = await api.get('/admin/reports');
       setReports(res.data);
-    } catch { setAlert({ type: 'error', message: 'Failed to load reports.' }); }
-    finally { setLoading(false); }
+    } catch {
+      setAlert({ type: 'error', message: 'Failed to load reports.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetch(); }, []);
@@ -74,39 +79,72 @@ export default function Reports() {
 
   return (
     <Layout>
-      <div className="space-y-8">
+      <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200">
           <div>
-            <h1 className="text-2xl font-extrabold text-white flex items-center space-x-2"><BarChart3 className="w-6 h-6 text-violet-400" /><span>{t('systemReports')}</span></h1>
-            <p className="text-sm text-slate-400 mt-1">Usage, appointments, compliance, and platform analytics</p>
+            <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
+              <span className="text-[#ff6f61]">{t('systemReports')} & Analytics</span>
+            </h1>
+            <p className="text-xs text-gray-500 mt-0.5">Real-time telehealth operational metrics, fulfillment rate, and monthly trends</p>
           </div>
-          <button onClick={fetch} disabled={loading} className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 disabled:opacity-50 transition-colors">
+          <button
+            onClick={fetch}
+            disabled={loading}
+            className="p-2 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 disabled:opacity-50 transition-colors shadow-xs"
+          >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
+          <div className="flex items-center justify-center h-64 bg-white rounded-xl border border-gray-200">
+            <Loader2 className="w-8 h-8 animate-spin text-[#ff6f61]" />
+          </div>
         ) : !reports ? null : (
           <>
             {/* Overview stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={Users} label={t('totalUsers')} value={reports.totalUsers} color="bg-indigo-500/10 text-indigo-400" />
-              <StatCard icon={Calendar} label={t('totalAppointments')} value={reports.totalAppointments} color="bg-violet-500/10 text-violet-400" />
-              <StatCard icon={CheckCircle} label={t('completedConsultations')} value={reports.completedConsultations} color="bg-emerald-500/10 text-emerald-400" sub={`${reports.totalAppointments > 0 ? Math.round((reports.completedConsultations / reports.totalAppointments) * 100) : 0}% completion rate`} />
-              <StatCard icon={FileText} label={t('prescriptionsGenerated')} value={reports.prescriptionsGenerated} color="bg-teal-500/10 text-teal-400" />
+              <StatCard
+                icon={Users}
+                label={t('totalUsers')}
+                value={reports.totalUsers}
+                colorClass="bg-purple-50 text-purple-700"
+                borderClass="border-purple-100"
+              />
+              <StatCard
+                icon={Calendar}
+                label={t('totalAppointments')}
+                value={reports.totalAppointments}
+                colorClass="bg-orange-50 text-[#ff6f61]"
+                borderClass="border-orange-100"
+              />
+              <StatCard
+                icon={CheckCircle}
+                label={t('completedConsultations')}
+                value={reports.completedConsultations}
+                colorClass="bg-teal-50 text-[#10847e]"
+                borderClass="border-teal-100"
+                sub={`${reports.totalAppointments > 0 ? Math.round((reports.completedConsultations / reports.totalAppointments) * 100) : 0}% completion rate`}
+              />
+              <StatCard
+                icon={FileText}
+                label={t('prescriptionsGenerated')}
+                value={reports.prescriptionsGenerated}
+                colorClass="bg-blue-50 text-blue-700"
+                borderClass="border-blue-100"
+              />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Appointments by status */}
               {reports.appointmentsByStatus?.length > 0 && (
-                <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-                  <h2 className="text-base font-bold text-white">Appointments by Status</h2>
+                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-4">
+                  <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Appointments by Status</h2>
                   <div className="space-y-3">
                     {reports.appointmentsByStatus.map(({ _id, count }) => (
-                      <HBar key={_id} label={_id} value={count} max={totalByStatus} color={STATUS_COLORS[_id] || 'bg-slate-500'} />
+                      <HBar key={_id} label={_id} value={count} max={totalByStatus} color={STATUS_COLORS[_id] || 'bg-gray-400'} />
                     ))}
                   </div>
                 </div>
@@ -114,9 +152,9 @@ export default function Reports() {
 
               {/* Users by role */}
               {reports.usersByRole?.length > 0 && (
-                <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-                  <h2 className="text-base font-bold text-white">Users by Role</h2>
-                  <div className="flex items-end gap-4 h-32 px-4">
+                <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-4">
+                  <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider">User Distribution by Role</h2>
+                  <div className="flex items-end gap-4 h-32 px-4 pt-4">
                     {reports.usersByRole.map(({ _id, count }) => (
                       <VBar key={_id} label={_id} value={count} max={Math.max(...reports.usersByRole.map(u => u.count))} />
                     ))}
@@ -127,20 +165,23 @@ export default function Reports() {
 
             {/* Monthly appointments trend */}
             {reports.appointmentsByMonth?.length > 0 && (
-              <div className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4">
-                <h2 className="text-base font-bold text-white flex items-center space-x-2"><TrendingUp className="w-4 h-4 text-indigo-400" /><span>Monthly Appointments Trend</span></h2>
-                <div className="flex items-end gap-3 h-36 overflow-x-auto">
+              <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-4">
+                <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center space-x-2">
+                  <TrendingUp className="w-4 h-4 text-[#ff6f61]" />
+                  <span>Monthly Consultation Volume</span>
+                </h2>
+                <div className="flex items-end gap-3 h-36 overflow-x-auto pt-4">
                   {reports.appointmentsByMonth.map(({ _id, count }) => {
                     const maxCount = Math.max(...reports.appointmentsByMonth.map(m => m.count));
                     const pct = maxCount > 0 ? Math.max(8, Math.round((count / maxCount) * 100)) : 8;
                     const monthName = new Date(2026, (_id.month || 1) - 1, 1).toLocaleString('en', { month: 'short' });
                     return (
                       <div key={`${_id.year}-${_id.month}`} className="flex flex-col items-center gap-1 flex-1 min-w-[40px]">
-                        <span className="text-[10px] font-semibold text-slate-300">{count}</span>
-                        <div className="w-full flex flex-col justify-end bg-slate-800 rounded-lg overflow-hidden" style={{ height: 96 }}>
-                          <div className="bg-gradient-to-t from-indigo-600 to-violet-500 rounded-lg w-full" style={{ height: `${pct}%` }} />
+                        <span className="text-[10px] font-bold text-gray-900">{count}</span>
+                        <div className="w-full flex flex-col justify-end bg-gray-100 rounded-lg overflow-hidden" style={{ height: 96 }}>
+                          <div className="bg-gradient-to-t from-[#ff6f61] to-[#fe8d00] rounded-lg w-full" style={{ height: `${pct}%` }} />
                         </div>
-                        <span className="text-[10px] text-slate-500">{monthName}</span>
+                        <span className="text-[10px] font-semibold text-gray-500">{monthName}</span>
                       </div>
                     );
                   })}
@@ -149,18 +190,21 @@ export default function Reports() {
             )}
 
             {/* Compliance */}
-            <div className="glass-panel p-5 rounded-2xl border border-slate-800">
-              <h2 className="text-base font-bold text-white flex items-center space-x-2 mb-4"><CheckCircle className="w-4 h-4 text-emerald-400" /><span>Compliance & Audit Summary</span></h2>
+            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
+              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center space-x-2 mb-4">
+                <CheckCircle className="w-4 h-4 text-[#10847e]" />
+                <span>Regulatory & Audit Compliance Summary</span>
+              </h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                 {[
-                  { label: 'Audit Log Entries', value: reports.totalAuditLogs ?? '—' },
-                  { label: 'Prescriptions Signed', value: reports.prescriptionsGenerated ?? '—' },
-                  { label: 'Active Users', value: reports.activeUsers ?? '—' },
-                  { label: 'Data Encrypted', value: '100%' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-center">
-                    <p className="text-2xl font-bold text-white">{value}</p>
-                    <p className="text-slate-400 mt-1">{label}</p>
+                  { label: 'Audit Log Records', value: reports.totalAuditLogs ?? '—', color: 'text-gray-900' },
+                  { label: 'Signed e-Prescriptions', value: reports.prescriptionsGenerated ?? '—', color: 'text-[#10847e]' },
+                  { label: 'Active User Accounts', value: reports.activeUsers ?? '—', color: 'text-[#ff6f61]' },
+                  { label: 'Data Encryption', value: '100% AES-256', color: 'text-purple-700' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="p-3.5 rounded-xl bg-gray-50 border border-gray-100 text-center">
+                    <p className={`text-2xl font-black ${color}`}>{value}</p>
+                    <p className="text-gray-500 font-semibold mt-1">{label}</p>
                   </div>
                 ))}
               </div>

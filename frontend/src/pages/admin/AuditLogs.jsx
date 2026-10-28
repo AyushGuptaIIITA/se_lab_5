@@ -6,48 +6,48 @@ import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 const ACTION_COLORS = {
-  USER_LOGIN: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
-  USER_REGISTERED: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
-  PRESCRIPTION_CREATED: 'bg-teal-500/10 text-teal-300 border-teal-500/30',
-  PRESCRIPTION_SENT_TO_PHARMACY: 'bg-violet-500/10 text-violet-300 border-violet-500/30',
-  APPOINTMENT_BOOKED: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30',
-  APPOINTMENT_STATUS_UPDATED: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-  CONSULTATION_STARTED: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30',
-  CONSULTATION_ENDED: 'bg-slate-500/10 text-slate-300 border-slate-500/30',
-  USER_SUSPENDED: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
-  USER_DELETED: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+  USER_LOGIN: 'bg-teal-50 text-[#10847e] border-teal-200',
+  USER_REGISTERED: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  PRESCRIPTION_CREATED: 'bg-orange-50 text-[#ff6f61] border-orange-200',
+  PRESCRIPTION_SENT_TO_PHARMACY: 'bg-purple-50 text-purple-700 border-purple-200',
+  APPOINTMENT_BOOKED: 'bg-blue-50 text-blue-700 border-blue-200',
+  APPOINTMENT_STATUS_UPDATED: 'bg-amber-50 text-amber-700 border-amber-200',
+  CONSULTATION_STARTED: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  CONSULTATION_ENDED: 'bg-gray-100 text-gray-700 border-gray-200',
+  USER_SUSPENDED: 'bg-rose-50 text-rose-700 border-rose-200',
+  USER_DELETED: 'bg-rose-50 text-rose-700 border-rose-200',
 };
 
 function LogRow({ log }) {
   const [open, setOpen] = useState(false);
-  const style = ACTION_COLORS[log.action] || 'bg-slate-500/10 text-slate-300 border-slate-500/30';
+  const style = ACTION_COLORS[log.action] || 'bg-gray-100 text-gray-700 border-gray-200';
 
   return (
     <>
-      <tr className="hover:bg-slate-900/50 transition-colors cursor-pointer" onClick={() => setOpen(!open)}>
-        <td className="py-3.5 px-4 text-[10px] text-slate-500 font-mono whitespace-nowrap">
+      <tr className="hover:bg-gray-50/70 transition-colors cursor-pointer" onClick={() => setOpen(!open)}>
+        <td className="py-3 px-4 text-[11px] text-gray-500 font-mono whitespace-nowrap">
           {new Date(log.timestamp).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
         </td>
-        <td className="py-3.5 px-4">
+        <td className="py-3 px-4">
           <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${style}`}>
             {log.action?.replace(/_/g, ' ')}
           </span>
         </td>
-        <td className="py-3.5 px-4">
-          <p className="text-xs font-semibold text-slate-200">{log.actorName || '—'}</p>
-          <span className="text-[10px] text-slate-500 capitalize">{log.actorRole}</span>
+        <td className="py-3 px-4">
+          <p className="text-xs font-bold text-gray-900">{log.actorName || '—'}</p>
+          <span className="text-[10px] text-gray-500 capitalize">{log.actorRole}</span>
         </td>
-        <td className="py-3.5 px-4 text-xs text-slate-400 capitalize">{log.targetType || '—'}</td>
-        <td className="py-3.5 px-4 text-[10px] font-mono text-slate-500">{log.ipAddress || '—'}</td>
-        <td className="py-3.5 px-4 text-right">
-          {open ? <ChevronUp className="w-4 h-4 text-slate-400 ml-auto" /> : <ChevronDown className="w-4 h-4 text-slate-400 ml-auto" />}
+        <td className="py-3 px-4 text-xs text-gray-600 capitalize">{log.targetType || '—'}</td>
+        <td className="py-3 px-4 text-[11px] font-mono text-gray-400">{log.ipAddress || '—'}</td>
+        <td className="py-3 px-4 text-right">
+          {open ? <ChevronUp className="w-4 h-4 text-gray-400 ml-auto" /> : <ChevronDown className="w-4 h-4 text-gray-400 ml-auto" />}
         </td>
       </tr>
       {open && (
         <tr>
-          <td colSpan={6} className="px-4 pb-4">
-            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-700 text-[11px] font-mono text-slate-400 whitespace-pre-wrap">
-              {log.details ? JSON.stringify(log.details, null, 2) : 'No additional details.'}
+          <td colSpan={6} className="px-4 pb-3 bg-gray-50">
+            <div className="p-3 rounded-lg bg-white border border-gray-200 text-[11px] font-mono text-gray-700 whitespace-pre-wrap shadow-xs">
+              {log.details ? JSON.stringify(log.details, null, 2) : 'No additional metadata logged.'}
             </div>
           </td>
         </tr>
@@ -60,72 +60,77 @@ export default function AuditLogs() {
   const { t } = useLanguage();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [alert, setAlert] = useState(null);
-  const LIMIT = 20;
+  const LIMIT = 15;
+
+  const ACTIONS = [
+    'USER_LOGIN', 'USER_REGISTERED', 'PRESCRIPTION_CREATED',
+    'PRESCRIPTION_SENT_TO_PHARMACY', 'APPOINTMENT_BOOKED',
+    'APPOINTMENT_STATUS_UPDATED', 'CONSULTATION_STARTED',
+    'CONSULTATION_ENDED', 'USER_SUSPENDED', 'USER_DELETED',
+  ];
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
       const params = { page, limit: LIMIT };
-      if (search) params.actor = search;
       if (actionFilter) params.action = actionFilter;
-      if (fromDate) params.from = fromDate;
-      if (toDate) params.to = toDate;
       const res = await api.get('/admin/audit-logs', { params });
       setLogs(res.data.logs || []);
       setTotal(res.data.total || 0);
-    } catch { setAlert({ type: 'error', message: 'Failed to load audit logs.' }); }
-    finally { setLoading(false); }
+    } catch {
+      setAlert({ type: 'error', message: 'Failed to load audit logs.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetchLogs(); }, [page, actionFilter, fromDate, toDate]);
-  useEffect(() => {
-    const t = setTimeout(() => { setPage(1); fetchLogs(); }, 400);
-    return () => clearTimeout(t);
-  }, [search]);
+  useEffect(() => { fetchLogs(); }, [page, actionFilter]);
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.ceil(total / LIMIT) || 1;
 
   return (
     <Layout>
       <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        <div>
-          <h1 className="text-2xl font-extrabold text-white flex items-center space-x-2"><Shield className="w-6 h-6 text-purple-400" /><span>{t('auditLogs')}</span></h1>
-          <p className="text-sm text-slate-400 mt-1">Immutable audit trail for all sensitive actions. Total: <span className="text-slate-200 font-semibold">{total}</span> entries</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
+              <span className="text-[#10847e]">{t('auditLogs')} & Compliance Trail</span>
+            </h1>
+            <p className="text-xs text-gray-500 mt-0.5">Immutable audit trail of all sensitive medical and authentication actions (SRS FR-12)</p>
+          </div>
+          <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 self-start">
+            {total} Total Audit Records
+          </span>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            <input type="text" placeholder="Search by actor name..." value={search} onChange={e => setSearch(e.target.value)}
-              className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none" />
+        {/* Filter */}
+        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex items-center justify-between gap-3">
+          <div className="flex items-center space-x-2">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <select
+              value={actionFilter}
+              onChange={e => { setActionFilter(e.target.value); setPage(1); }}
+              className="glass-input px-3 py-1.5 rounded-lg text-xs bg-white"
+            >
+              <option value="">All Security Events</option>
+              {ACTIONS.map(a => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
+            </select>
           </div>
-          <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1); }} className="glass-input px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none min-w-[160px]">
-            <option value="">All Actions</option>
-            {Object.keys(ACTION_COLORS).map(a => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}
-          </select>
-          <div className="flex items-center space-x-2 text-xs">
-            <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setPage(1); }} className="glass-input px-3 py-2.5 rounded-xl text-slate-100 focus:outline-none" />
-            <span className="text-slate-500">–</span>
-            <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPage(1); }} className="glass-input px-3 py-2.5 rounded-xl text-slate-100 focus:outline-none" />
-          </div>
+          <span className="text-xs text-gray-400">Click on any row to expand JSON payload</span>
         </div>
 
-        {/* Table */}
-        <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+        {/* Logs Table */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-900/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
-                <tr>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50/70 text-gray-600 uppercase font-bold text-[11px] tracking-wider">
                   <th className="py-3 px-4">Timestamp</th>
                   <th className="py-3 px-4">Action</th>
                   <th className="py-3 px-4">Actor</th>
@@ -134,27 +139,40 @@ export default function AuditLogs() {
                   <th className="py-3 px-4 text-right">Details</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-gray-100 text-gray-700">
                 {loading ? (
-                  <tr><td colSpan={6} className="py-12 text-center"><Loader2 className="w-6 h-6 animate-spin text-indigo-500 mx-auto" /></td></tr>
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <Loader2 className="w-6 h-6 animate-spin text-[#ff6f61] mx-auto" />
+                    </td>
+                  </tr>
                 ) : logs.length === 0 ? (
-                  <tr><td colSpan={6} className="py-12 text-center text-slate-400">No audit log entries found.</td></tr>
-                ) : (
-                  logs.map(log => <LogRow key={log._id} log={log} />)
-                )}
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-gray-400">
+                      No matching audit logs found.
+                    </td>
+                  </tr>
+                ) : logs.map(log => <LogRow key={log._id} log={log} />)}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <span>Page {page} of {totalPages} · {total} entries (newest first)</span>
-              <div className="flex items-center space-x-2">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-40 hover:bg-slate-700 transition-colors">
+            <div className="p-3.5 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50/50">
+              <span>Page {page} of {totalPages} · {total} logs</span>
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1 rounded bg-white border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
+                >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 disabled:opacity-40 hover:bg-slate-700 transition-colors">
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1 rounded bg-white border border-gray-200 disabled:opacity-40 hover:bg-gray-100"
+                >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, Lock, Save, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
+import { User, Mail, Phone, Lock, Save, Eye, EyeOff, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import AlertBanner from '../components/AlertBanner';
@@ -48,127 +48,182 @@ export default function Profile() {
     }
   }, [user]);
 
-  const setF = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }));
-  const setP = (field) => (e) => setPassForm(f => ({ ...f, [field]: e.target.value }));
+  const setF = (f) => (e) => setForm(prev => ({ ...prev, [f]: e.target.value }));
+  const setP = (f) => (e) => setPassForm(prev => ({ ...prev, [f]: e.target.value }));
 
-  const handleSaveProfile = async (e) => {
+  const handleSaveInfo = async (e) => {
     e.preventDefault();
     setAlert(null);
     setLoading(true);
     try {
-      const payload = {
-        name: form.name, email: form.email, phone: form.phone,
-        ...(user?.role === 'doctor' && { specialization: form.specialization, licenseNumber: form.licenseNumber, bio: form.bio, consultationFee: Number(form.consultationFee) }),
-        ...(user?.role === 'patient' && { gender: form.gender, bloodGroup: form.bloodGroup, dateOfBirth: form.dateOfBirth || undefined, address: { village: form.village, district: form.district, state: form.state, pincode: form.pincode }, emergencyContact: { name: form.emergencyContactName, phone: form.emergencyContactPhone, relation: form.emergencyContactRelation } }),
-      };
-      const res = await api.put('/user/profile/edit', payload);
+      const res = await api.put('/auth/me', form);
       updateUser(res.data.user);
-      setAlert({ type: 'success', message: t('profileUpdated') });
+      setAlert({ type: 'success', message: 'Profile details saved successfully!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to update profile.' });
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
     setAlert(null);
-    if (passForm.newPassword !== passForm.confirmPassword) { setAlert({ type: 'error', message: 'New passwords do not match.' }); return; }
-    if (passForm.newPassword.length < 6) { setAlert({ type: 'error', message: 'Password must be at least 6 characters.' }); return; }
+    if (passForm.newPassword !== passForm.confirmPassword) {
+      setAlert({ type: 'error', message: 'New passwords do not match.' });
+      return;
+    }
+    if (passForm.newPassword.length < 6) {
+      setAlert({ type: 'error', message: 'New password must be at least 6 characters.' });
+      return;
+    }
     setLoading(true);
     try {
-      await api.put('/user/change-password', { currentPassword: passForm.currentPassword, newPassword: passForm.newPassword });
-      setAlert({ type: 'success', message: t('passwordChanged') });
+      await api.put('/auth/change-password', {
+        currentPassword: passForm.currentPassword,
+        newPassword: passForm.newPassword,
+      });
+      setAlert({ type: 'success', message: 'Password updated successfully!' });
       setPassForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to change password.' });
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const roleBadge = { patient: 'bg-blue-950 text-blue-300 border-blue-800/50', doctor: 'bg-emerald-950 text-emerald-300 border-emerald-800/50', admin: 'bg-purple-950 text-purple-300 border-purple-800/50' };
 
   return (
     <Layout>
-      <div className="space-y-6 max-w-2xl mx-auto">
-        <div>
-          <button onClick={() => navigate(-1)} className="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-indigo-400 mb-2 transition-colors">
-            <ArrowLeft className="w-3.5 h-3.5" /><span>Back</span>
-          </button>
-          <div className="flex items-center space-x-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center text-2xl font-bold text-white border border-indigo-500/30">
-              {user?.name?.charAt(0).toUpperCase() || 'U'}
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold text-white">{user?.name}</h1>
-              <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider border mt-1 ${roleBadge[user?.role] || 'bg-slate-800 text-slate-300 border-slate-700'}`}>{t(user?.role || 'user')}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex space-x-2 border-b border-slate-800 pb-3">
-          {['info', 'password'].map(tabName => (
-            <button key={tabName} onClick={() => { setTab(tabName); setAlert(null); }}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${tab === tabName ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'}`}>
-              {tabName === 'info' ? 'Profile Information' : 'Change Password'}
-            </button>
-          ))}
-        </div>
-
+      <div className="space-y-6 max-w-3xl mx-auto">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 shadow-2xl">
-          {tab === 'info' ? (
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              {/* Common */}
-              {[
-                { field: 'name', label: t('name'), type: 'text', icon: <User className="w-4 h-4" />, required: true },
-                { field: 'email', label: t('email'), type: 'email', icon: <Mail className="w-4 h-4" />, required: true },
-                { field: 'phone', label: t('phone'), type: 'tel', icon: <Phone className="w-4 h-4" /> },
-              ].map(({ field, label, type, icon, required }) => (
-                <div key={field}>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">{label}</label>
-                  <div className="relative">
-                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">{icon}</div>
-                    <input type={type} required={required} value={form[field]} onChange={setF(field)}
-                      className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
-                  </div>
-                </div>
-              ))}
+        <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
+              <span className="text-[#ff6f61]">Account & Clinical Profile</span>
+            </h1>
+            <p className="text-xs text-gray-500 mt-0.5">Manage your personal details, contact info, and security settings</p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-orange-50 text-[#ff6f61] border border-orange-200">
+            {user?.role} Account
+          </span>
+        </div>
 
-              {/* Doctor-specific */}
+        {/* Tab Controls */}
+        <div className="flex border-b border-gray-200 gap-2">
+          <button
+            onClick={() => setTab('info')}
+            className={`pb-2.5 px-4 text-xs font-bold transition-all border-b-2 ${
+              tab === 'info'
+                ? 'border-[#ff6f61] text-[#ff6f61]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Personal & Clinical Information
+          </button>
+          <button
+            onClick={() => setTab('password')}
+            className={`pb-2.5 px-4 text-xs font-bold transition-all border-b-2 ${
+              tab === 'password'
+                ? 'border-[#ff6f61] text-[#ff6f61]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Security & Password
+          </button>
+        </div>
+
+        <div className="bg-white p-6 sm:p-7 rounded-xl border border-gray-200 shadow-xs">
+          {tab === 'info' ? (
+            <form onSubmit={handleSaveInfo} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('name')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={form.name}
+                    onChange={setF('name')}
+                    className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('email')}</label>
+                  <input
+                    type="email"
+                    disabled
+                    value={form.email}
+                    className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-gray-100 text-gray-500 cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('phone')}</label>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={setF('phone')}
+                    className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Doctor Details */}
               {user?.role === 'doctor' && (
-                <div className="space-y-3 p-4 rounded-xl bg-emerald-900/10 border border-emerald-800/30">
-                  <p className="text-xs font-semibold text-emerald-400 uppercase">Doctor Details</p>
+                <div className="space-y-3 p-4 rounded-xl bg-orange-50/60 border border-orange-200">
+                  <p className="text-xs font-bold text-[#ff6f61] uppercase">Practitioner Details</p>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('specialization')}</label>
-                    <select value={form.specialization} onChange={setF('specialization')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('specialization')}</label>
+                    <select
+                      value={form.specialization}
+                      onChange={setF('specialization')}
+                      className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                    >
                       <option value="">Select...</option>
                       {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
-                    <input type="text" value={form.licenseNumber} onChange={setF('licenseNumber')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
+                    <input
+                      type="text"
+                      value={form.licenseNumber}
+                      onChange={setF('licenseNumber')}
+                      className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                    />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('consultationFee')}</label>
-                    <input type="number" value={form.consultationFee} onChange={setF('consultationFee')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('consultationFee')} (₹)</label>
+                    <input
+                      type="number"
+                      value={form.consultationFee}
+                      onChange={setF('consultationFee')}
+                      className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                    />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('bio')}</label>
-                    <textarea rows={3} value={form.bio} onChange={setF('bio')} className="glass-input w-full px-3 py-2 rounded-xl text-sm text-slate-100 focus:outline-none resize-none" />
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bio')}</label>
+                    <textarea
+                      rows={3}
+                      value={form.bio}
+                      onChange={setF('bio')}
+                      className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white resize-none"
+                    />
                   </div>
                 </div>
               )}
 
-              {/* Patient-specific */}
+              {/* Patient Details */}
               {user?.role === 'patient' && (
-                <div className="space-y-3 p-4 rounded-xl bg-blue-900/10 border border-blue-800/30">
-                  <p className="text-xs font-semibold text-blue-400 uppercase">Patient Details</p>
+                <div className="space-y-3 p-4 rounded-xl bg-teal-50/60 border border-teal-200">
+                  <p className="text-xs font-bold text-[#10847e] uppercase">Patient Profile Information</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('gender')}</label>
-                      <select value={form.gender} onChange={setF('gender')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('gender')}</label>
+                      <select
+                        value={form.gender}
+                        onChange={setF('gender')}
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                      >
                         <option value="">Select...</option>
                         <option value="male">{t('male')}</option>
                         <option value="female">{t('female')}</option>
@@ -176,8 +231,12 @@ export default function Profile() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
-                      <select value={form.bloodGroup} onChange={setF('bloodGroup')} className="glass-input w-full px-3 py-2.5 rounded-xl text-sm text-slate-100 focus:outline-none">
+                      <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
+                      <select
+                        value={form.bloodGroup}
+                        onChange={setF('bloodGroup')}
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                      >
                         <option value="">Select...</option>
                         {['A+','A-','B+','B-','O+','O-','AB+','AB-'].map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
@@ -186,43 +245,85 @@ export default function Profile() {
                   <div className="grid grid-cols-2 gap-3">
                     {['village', 'district', 'state', 'pincode'].map(f => (
                       <div key={f}>
-                        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">{t(f)}</label>
-                        <input type="text" value={form[f]} onChange={setF(f)} className="glass-input w-full px-3 py-2 rounded-xl text-sm text-slate-100 focus:outline-none" />
+                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t(f)}</label>
+                        <input
+                          type="text"
+                          value={form[f]}
+                          onChange={setF(f)}
+                          className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        />
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center space-x-3 pt-2">
-                <button type="submit" disabled={loading} className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50">
-                  {loading ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving...</span></> : <><Save className="w-4 h-4" /><span>{t('save')}</span></>}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-sm transition-all disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving changes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>Save Profile Information</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
           ) : (
-            <form onSubmit={handleChangePassword} className="space-y-4">
+            <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
               {[
                 { field: 'currentPassword', label: t('currentPassword') },
                 { field: 'newPassword', label: t('newPassword') },
                 { field: 'confirmPassword', label: t('confirmPassword') },
               ].map(({ field, label }) => (
                 <div key={field}>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">{label}</label>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{label}</label>
                   <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                    <input type={showPass ? 'text' : 'password'} required value={passForm[field]} onChange={setP(field)}
-                      className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none" />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      required
+                      value={passForm[field]}
+                      onChange={setP(field)}
+                      className="glass-input w-full pl-10 pr-10 py-2 rounded-lg text-xs bg-white"
+                    />
                     {field === 'confirmPassword' && (
-                      <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowPass(!showPass)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
                         {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     )}
                   </div>
                 </div>
               ))}
-              <button type="submit" disabled={loading} className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50">
-                {loading ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Updating...</span></> : <><Save className="w-4 h-4" /><span>Update Password</span></>}
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#10847e] hover:bg-[#0c6b66] shadow-sm transition-all disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Updating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>Update Security Password</span>
+                  </>
+                )}
               </button>
             </form>
           )}

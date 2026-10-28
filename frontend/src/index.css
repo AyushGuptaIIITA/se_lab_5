@@ -4,32 +4,73 @@
 
 @layer base {
   body {
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-    @apply bg-slate-950 text-slate-100;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    @apply bg-[#f8f9fa] text-[#212121] antialiased;
   }
 }
 
+/* Tata 1mg Clean Card Styles */
 .glass-panel {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #ffffff;
+  border: 1px solid #ebebeb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  border-color: #ff6f61;
 }
 
 .glass-input {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #212121;
   transition: all 0.2s ease-in-out;
 }
 
 .glass-input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  border-color: #ff6f61;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 111, 97, 0.18);
+}
+
+/* 1mg Button utilities */
+.btn-1mg-primary {
+  background-color: #ff6f61;
+  color: #ffffff;
+  font-weight: 600;
+  transition: background-color 0.15s ease-in-out;
+}
+.btn-1mg-primary:hover {
+  background-color: #e2584a;
+}
+
+.btn-1mg-secondary {
+  background-color: #10847e;
+  color: #ffffff;
+  font-weight: 600;
+  transition: background-color 0.15s ease-in-out;
+}
+.btn-1mg-secondary:hover {
+  background-color: #0c6b66;
+}
+
+.btn-1mg-outline {
+  border: 1.5px solid #ff6f61;
+  color: #ff6f61;
+  background-color: transparent;
+  font-weight: 600;
+}
+.btn-1mg-outline:hover {
+  background-color: #fff4f2;
 }
 
 /* Custom scrollbar */
@@ -39,23 +80,23 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.4);
+  background: #f1f1f1;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.4);
+  background: #c1c1c1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: #a8a8a8;
 }
 
-/* Fade-in animation */
+/* Animations */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -64,5 +105,5 @@
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
+  animation: fadeIn 0.25s ease-out forwards;
 }
