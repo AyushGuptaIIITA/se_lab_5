@@ -13,16 +13,16 @@ function PasswordStrength({ password }) {
   if (password.length >= 10) score++;
   if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
-  const colors = ['bg-rose-500', 'bg-amber-500', 'bg-teal-500', 'bg-emerald-500'];
+  const colors = ['bg-rose-500', 'bg-amber-500', 'bg-blue-500', 'bg-emerald-500'];
   const labels = ['Weak', 'Fair', 'Good', 'Strong'];
   return password ? (
     <div className="mt-1.5">
       <div className="grid grid-cols-4 gap-1 h-1.5 mb-1">
         {[0,1,2,3].map(i => (
-          <div key={i} className={`rounded-full transition-colors ${i < score ? colors[score-1] : 'bg-gray-200'}`} />
+          <div key={i} className={`rounded-full transition-colors ${i < score ? colors[score-1] : 'bg-slate-200'}`} />
         ))}
       </div>
-      <span className="text-[11px] text-gray-500">{labels[score-1] || 'Enter password'}</span>
+      <span className="text-[11px] font-semibold text-slate-500">{labels[score-1] || 'Enter password'}</span>
     </div>
   ) : null;
 }
@@ -59,24 +59,24 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-[#f8f9fa]">
-      <div className="w-full max-w-lg text-center mb-5 mt-4">
-        <div className="inline-flex items-center justify-center space-x-2 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#ff6f61] to-[#fe8d00] flex items-center justify-center shadow-md">
+    <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-50">
+      <div className="w-full max-w-lg text-center mb-5 mt-4 animate-fade-in">
+        <div className="inline-flex items-center justify-center space-x-2.5 mb-2">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
             <Stethoscope className="w-6 h-6 text-white" />
           </div>
-          <span className="text-3xl font-extrabold text-[#ff6f61] tracking-tight">
-            TATA <span className="text-[#10847e]">1mg</span>
+          <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Tele<span className="text-blue-600">Med</span>
           </span>
         </div>
-        <p className="text-sm font-semibold text-gray-700">Create your 1mg Telehealth Account</p>
+        <p className="text-sm font-semibold text-slate-700">Create your TeleMed Account</p>
       </div>
 
-      <div className="relative w-full max-w-lg mb-8">
-        <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-lg border border-gray-200/80 space-y-5">
+      <div className="relative w-full max-w-lg mb-8 animate-slide-up">
+        <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 space-y-5">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">{t('register')}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Join India's leading digital health consultation network</p>
+            <h2 className="text-xl font-extrabold text-slate-900">{t('register')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Join the TeleMed healthcare and e-prescription network</p>
           </div>
 
           {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
@@ -84,7 +84,7 @@ export default function Register() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Role selector */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">{t('selectRole')}</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">{t('selectRole')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {['patient', 'doctor', 'admin'].map(r => (
                   <button
@@ -93,8 +93,8 @@ export default function Register() {
                     onClick={() => setForm(f => ({ ...f, role: r }))}
                     className={`p-3 rounded-xl border text-xs font-bold capitalize transition-all ${
                       form.role === r
-                        ? 'bg-[#fff4f2] border-[#ff6f61] text-[#ff6f61] shadow-xs'
-                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                        ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                     }`}
                   >
                     {r === 'patient' ? '👤' : r === 'doctor' ? '🩺' : '⚡'} {t(r)}
@@ -110,16 +110,16 @@ export default function Register() {
               { field: 'phone', label: t('phone'), type: 'tel', icon: <Phone className="w-4 h-4" />, placeholder: '+91 98765 43210' },
             ].map(({ field, label, type, icon, placeholder }) => (
               <div key={field}>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{label}</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">{label}</label>
                 <div className="relative">
-                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">{icon}</div>
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">{icon}</div>
                   <input
                     type={type}
                     required={field !== 'phone'}
                     placeholder={placeholder}
                     value={form[field]}
                     onChange={set(field)}
-                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-slate-400"
                   />
                 </div>
               </div>
@@ -127,21 +127,21 @@ export default function Register() {
 
             {/* Password */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('password')}</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">{t('password')}</label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 <input
                   type={showPass ? 'text' : 'password'}
                   required
                   placeholder="Min 6 characters"
                   value={form.password}
                   onChange={set('password')}
-                  className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                  className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm placeholder-slate-400"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -151,10 +151,10 @@ export default function Register() {
 
             {/* Doctor-specific fields */}
             {form.role === 'doctor' && (
-              <div className="space-y-3 p-4 rounded-xl bg-orange-50/60 border border-orange-200">
-                <p className="text-xs font-bold text-[#ff6f61] uppercase">Doctor Professional Details</p>
+              <div className="space-y-3 p-4 rounded-xl bg-blue-50/70 border border-blue-200 animate-fade-in">
+                <p className="text-xs font-bold text-blue-700 uppercase">Doctor Professional Details</p>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('specialization')}</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('specialization')}</label>
                   <select
                     value={form.specialization}
                     onChange={set('specialization')}
@@ -166,7 +166,7 @@ export default function Register() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('licenseNumber')}</label>
                   <input
                     type="text"
                     required
@@ -177,7 +177,7 @@ export default function Register() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('consultationFee')} (₹)</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('consultationFee')} (₹)</label>
                   <input
                     type="number"
                     placeholder="200"
@@ -187,7 +187,7 @@ export default function Register() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bio')}</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('bio')}</label>
                   <textarea
                     rows={2}
                     placeholder="Brief professional bio..."
@@ -201,11 +201,11 @@ export default function Register() {
 
             {/* Patient-specific fields */}
             {form.role === 'patient' && (
-              <div className="space-y-3 p-4 rounded-xl bg-teal-50/60 border border-teal-200">
-                <p className="text-xs font-bold text-[#10847e] uppercase">Patient Profile Information</p>
+              <div className="space-y-3 p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 animate-fade-in">
+                <p className="text-xs font-bold text-emerald-800 uppercase">Patient Profile Information</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('gender')}</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('gender')}</label>
                     <select
                       value={form.gender}
                       onChange={set('gender')}
@@ -217,7 +217,7 @@ export default function Register() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('bloodGroup')}</label>
                     <select
                       value={form.bloodGroup}
                       onChange={set('bloodGroup')}
@@ -229,7 +229,7 @@ export default function Register() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('village')}</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('village')}</label>
                   <input
                     type="text"
                     placeholder="Village / Town"
@@ -240,7 +240,7 @@ export default function Register() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('district')}</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('district')}</label>
                     <input
                       type="text"
                       placeholder="District"
@@ -250,7 +250,7 @@ export default function Register() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t('state')}</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">{t('state')}</label>
                     <input
                       type="text"
                       placeholder="State"
@@ -266,7 +266,7 @@ export default function Register() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-md shadow-[#ff6f61]/25 active:scale-[0.99] transition-all disabled:opacity-50"
+              className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 active:scale-[0.99] transition-all disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -282,9 +282,9 @@ export default function Register() {
             </button>
           </form>
 
-          <div className="text-center text-xs text-gray-600">
+          <div className="text-center text-xs text-slate-600">
             {t('alreadyHaveAccount')}{' '}
-            <Link to="/" className="font-bold text-[#ff6f61] hover:underline">
+            <Link to="/" className="font-bold text-blue-600 hover:underline">
               {t('login')}
             </Link>
           </div>

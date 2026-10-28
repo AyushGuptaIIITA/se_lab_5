@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, ChevronRight, Star, IndianRupee, Loader2, Calendar, Clock, Check, X, ShieldCheck, Stethoscope } from 'lucide-react';
+import { Search, Filter, ChevronRight, Star, IndianRupee, Loader2, Calendar, Clock, Check, X, ShieldCheck, Stethoscope, AlertCircle } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
@@ -9,52 +9,55 @@ const SPECIALIZATIONS = ['All', 'General Medicine', 'Pediatrics', 'Cardiology', 
 const TYPES = ['general', 'follow-up', 'emergency'];
 
 function DoctorCard({ doctor, onSelect, selected }) {
+  // Clean prefix if double "Dr. Dr." happens
+  const displayName = doctor.name?.startsWith('Dr.') ? doctor.name : `Dr. ${doctor.name}`;
+
   return (
     <div
       onClick={() => onSelect(doctor)}
-      className={`bg-white p-5 rounded-xl border cursor-pointer transition-all ${
+      className={`glass-card p-5 rounded-2xl border cursor-pointer transition-all duration-200 ${
         selected
-          ? 'border-[#ff6f61] ring-2 ring-[#ff6f61]/20 shadow-md bg-[#fffbfb]'
-          : 'border-gray-200 hover:border-[#ff6f61] hover:shadow-md'
+          ? 'border-blue-600 ring-2 ring-blue-500/20 shadow-md bg-blue-50/30'
+          : 'border-slate-200 hover:border-blue-400 hover:shadow-card-hover bg-white'
       }`}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center space-x-3.5">
-          <div className="w-13 h-13 rounded-xl bg-gradient-to-tr from-[#10847e] to-[#26a69a] flex items-center justify-center text-xl font-black text-white flex-shrink-0 shadow-xs">
-            {doctor.name?.charAt(0).toUpperCase() || 'D'}
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-lg font-black text-white flex-shrink-0 shadow-md shadow-blue-500/20">
+            {doctor.name?.replace(/^(Dr\.|Dr\s)/i, '').trim().charAt(0).toUpperCase() || 'D'}
           </div>
           <div>
             <div className="flex items-center space-x-1.5">
-              <h3 className="font-bold text-gray-900 text-base">Dr. {doctor.name}</h3>
-              <ShieldCheck className="w-4 h-4 text-[#10847e]" title="Verified Specialist" />
+              <h3 className="font-bold text-slate-900 text-base">{displayName}</h3>
+              <ShieldCheck className="w-4 h-4 text-blue-600" title="Verified Specialist" />
             </div>
-            <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#e8f6f5] text-[#10847e] mt-1 border border-teal-200/60">
+            <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 mt-1 border border-blue-200">
               {doctor.specialization}
             </span>
           </div>
         </div>
         {selected ? (
-          <span className="w-6 h-6 rounded-full bg-[#ff6f61] text-white flex items-center justify-center text-xs flex-shrink-0">
+          <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs flex-shrink-0 font-bold shadow-xs">
             ✓
           </span>
         ) : (
-          <span className="text-xs font-bold text-[#ff6f61] hover:underline">Select</span>
+          <span className="text-xs font-bold text-blue-600 hover:underline">Select</span>
         )}
       </div>
 
       {doctor.bio && (
-        <p className="text-xs text-gray-600 mt-3 line-clamp-2 leading-relaxed">{doctor.bio}</p>
+        <p className="text-xs text-slate-600 mt-3 line-clamp-2 leading-relaxed">{doctor.bio}</p>
       )}
 
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-        <div className="flex items-center text-xs text-gray-700 font-semibold">
-          <Star className="w-4 h-4 text-[#fe8d00] fill-[#fe8d00] mr-1" />
-          <span>4.8</span>
-          <span className="text-gray-400 ml-1">(250+ consults)</span>
+      <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+        <div className="flex items-center text-xs text-slate-700 font-semibold">
+          <Star className="w-4 h-4 text-amber-500 fill-amber-500 mr-1" />
+          <span>4.9</span>
+          <span className="text-slate-400 ml-1">(120+ consults)</span>
         </div>
-        <div className="flex items-center text-sm font-extrabold text-[#10847e]">
+        <div className="flex items-center text-sm font-extrabold text-blue-700">
           <span>₹{doctor.consultationFee || 200}</span>
-          <span className="text-[10px] text-gray-400 font-normal ml-1">Fee</span>
+          <span className="text-[10px] text-slate-400 font-normal ml-1">Fee</span>
         </div>
       </div>
     </div>
@@ -96,7 +99,10 @@ export default function SearchDoctors() {
   }, [search, spec]);
 
   useEffect(() => {
-    if (!selectedDoctor || !selectedDate) return;
+    if (!selectedDoctor || !selectedDate) {
+      setSlots([]);
+      return;
+    }
     const fetchSlots = async () => {
       setSlotsLoading(true);
       setSelectedSlot(null);
@@ -114,7 +120,7 @@ export default function SearchDoctors() {
 
   const handleBook = async () => {
     if (!selectedSlot || !selectedDate) {
-      setAlert({ type: 'error', message: 'Select a date and time slot.' });
+      setAlert({ type: 'error', message: 'Please select an appointment date and an available time slot.' });
       return;
     }
     setBooking(true);
@@ -132,7 +138,7 @@ export default function SearchDoctors() {
       setSelectedSlot(null);
       setSymptoms('');
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || 'Booking failed. Slot may be taken.' });
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Booking failed. Slot may already be reserved.' });
     } finally {
       setBooking(false);
     }
@@ -148,39 +154,39 @@ export default function SearchDoctors() {
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-2 border-b border-gray-200">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-2 border-b border-slate-200">
           <div>
-            <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
-              <span className="text-[#ff6f61]">Consult Qualified Doctors</span>
+            <h1 className="text-2xl font-black text-slate-900 flex items-center space-x-2">
+              <span>Find & Book Certified Specialists</span>
             </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Choose from certified specialists across India for online audio/video consultation
+            <p className="text-xs text-slate-500 mt-0.5">
+              Select date, view real-time time slots, and schedule instant video consultations
             </p>
           </div>
-          <div className="flex items-center space-x-2 text-xs font-semibold text-[#10847e] bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200">
-            <ShieldCheck className="w-4 h-4" />
-            <span>100% MCI Verified Doctors</span>
+          <div className="flex items-center space-x-2 text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+            <ShieldCheck className="w-4 h-4 text-blue-600" />
+            <span>MCI-Verified Medical Practitioners</span>
           </div>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col sm:flex-row gap-3">
+        <div className="glass-panel p-4 rounded-2xl flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Search doctor by name (e.g. Sharma, Patel, Gupta)..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="glass-input w-full pl-10 pr-4 py-2.5 rounded-lg text-sm placeholder-gray-400"
+              className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-slate-400"
             />
           </div>
           <div className="relative sm:w-64">
-            <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <select
               value={spec}
               onChange={e => setSpec(e.target.value)}
-              className="glass-input w-full pl-10 pr-4 py-2.5 rounded-lg text-sm bg-white"
+              className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm bg-white"
             >
               {SPECIALIZATIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -191,14 +197,14 @@ export default function SearchDoctors() {
           {/* Doctor list */}
           <div className="lg:col-span-2 space-y-4">
             {loading ? (
-              <div className="py-16 flex items-center justify-center bg-white rounded-xl border border-gray-200">
-                <Loader2 className="w-8 h-8 animate-spin text-[#ff6f61]" />
+              <div className="py-16 flex items-center justify-center glass-panel">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
               </div>
             ) : doctors.length === 0 ? (
-              <div className="py-16 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
-                <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                <p className="font-semibold text-gray-700">No doctors found matching criteria.</p>
-                <p className="text-xs text-gray-400 mt-1">Try selecting 'All' specializations or clearing the search box.</p>
+              <div className="py-16 text-center text-slate-500 glass-panel">
+                <Search className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                <p className="font-bold text-slate-700">No doctors found matching criteria.</p>
+                <p className="text-xs text-slate-400 mt-1">Try selecting 'All' specializations or clearing the search box.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -221,32 +227,34 @@ export default function SearchDoctors() {
           {/* Booking panel */}
           <div>
             {selectedDoctor ? (
-              <div className="bg-white p-5 rounded-xl border border-[#ff6f61]/40 shadow-sm sticky top-24 space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">{t('bookAppointment')}</h2>
+              <div className="glass-panel p-5 rounded-2xl sticky top-24 space-y-4 border-blue-200 animate-slide-up">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">{t('bookAppointment')}</h2>
                   <button
                     onClick={() => { setSelectedDoctor(null); setSlots([]); }}
-                    className="text-gray-400 hover:text-gray-600 p-1"
+                    className="text-slate-400 hover:text-slate-600 p-1"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                <div className="flex items-center space-x-3 p-3 rounded-xl bg-orange-50/60 border border-orange-100">
-                  <div className="w-10 h-10 rounded-xl bg-[#ff6f61] flex items-center justify-center font-bold text-white text-base">
-                    {selectedDoctor.name?.charAt(0)}
+                <div className="flex items-center space-x-3 p-3 rounded-xl bg-blue-50/70 border border-blue-200">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-base">
+                    {selectedDoctor.name?.replace(/^(Dr\.|Dr\s)/i, '').trim().charAt(0) || 'D'}
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-gray-900">Dr. {selectedDoctor.name}</p>
-                    <p className="text-xs font-semibold text-[#10847e]">{selectedDoctor.specialization}</p>
-                    <p className="text-xs text-gray-500 mt-0.5 font-bold">₹{selectedDoctor.consultationFee || 200} Consultation Fee</p>
+                    <p className="text-sm font-bold text-slate-900">
+                      {selectedDoctor.name?.startsWith('Dr.') ? selectedDoctor.name : `Dr. ${selectedDoctor.name}`}
+                    </p>
+                    <p className="text-xs font-semibold text-blue-700">{selectedDoctor.specialization}</p>
+                    <p className="text-xs text-slate-600 mt-0.5 font-bold">₹{selectedDoctor.consultationFee || 200} Consultation Fee</p>
                   </div>
                 </div>
 
                 {/* Date picker */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                    <Calendar className="inline w-3.5 h-3.5 mr-1 text-[#ff6f61]" />
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    <Calendar className="inline w-3.5 h-3.5 mr-1 text-blue-600" />
                     {t('bookingDate')}
                   </label>
                   <input
@@ -254,42 +262,53 @@ export default function SearchDoctors() {
                     min={minDate}
                     value={selectedDate}
                     onChange={e => setSelectedDate(e.target.value)}
-                    className="glass-input w-full px-3 py-2 rounded-lg text-sm bg-white"
+                    className="glass-input w-full px-3 py-2 rounded-xl text-sm bg-white"
                   />
                 </div>
 
-                {/* Slots */}
+                {/* Available Slots Display */}
                 {selectedDate && (
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-                      <Clock className="inline w-3.5 h-3.5 mr-1 text-[#10847e]" />
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                      <Clock className="inline w-3.5 h-3.5 mr-1 text-blue-600" />
                       {t('selectSlot')}
                     </label>
                     {slotsLoading ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="w-5 h-5 animate-spin text-[#ff6f61]" />
+                      <div className="flex items-center justify-center py-5">
+                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
                       </div>
                     ) : slots.length === 0 ? (
-                      <p className="text-xs text-gray-500 bg-gray-50 p-2.5 rounded-lg text-center">No available slots for this date.</p>
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 text-center">
+                        <AlertCircle className="w-4 h-4 text-slate-400 mx-auto mb-1" />
+                        <p className="font-semibold text-slate-700">No slots available on this day</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Please pick another date or doctor</p>
+                      </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-2">
-                        {slots.map((slot, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            disabled={!slot.available}
-                            onClick={() => setSelectedSlot({ start: slot.start, end: slot.end })}
-                            className={`py-2 px-2 rounded-lg text-xs font-bold transition-all border ${
-                              !slot.available
-                                ? 'opacity-40 cursor-not-allowed border-gray-200 text-gray-400 bg-gray-100 line-through'
-                                : selectedSlot?.start === slot.start
-                                ? 'bg-[#ff6f61] border-[#ff6f61] text-white shadow-xs'
-                                : 'border-gray-200 text-gray-700 bg-white hover:border-[#ff6f61] hover:bg-orange-50/50'
-                            }`}
-                          >
-                            {slot.start} – {slot.end}
-                          </button>
-                        ))}
+                        {slots.map((slot, i) => {
+                          const slotStart = slot.start || slot.startTime;
+                          const slotEnd = slot.end || slot.endTime;
+                          const isSelected = selectedSlot?.start === slotStart && selectedSlot?.end === slotEnd;
+                          const isAvailable = slot.available !== false;
+
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              disabled={!isAvailable}
+                              onClick={() => setSelectedSlot({ start: slotStart, end: slotEnd })}
+                              className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border ${
+                                !isAvailable
+                                  ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-100 line-through'
+                                  : isSelected
+                                  ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                  : 'border-slate-200 text-slate-700 bg-white hover:border-blue-400 hover:bg-blue-50/50'
+                              }`}
+                            >
+                              {slotStart} – {slotEnd}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -297,13 +316,13 @@ export default function SearchDoctors() {
 
                 {/* Type & symptoms */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     {t('appointmentType')}
                   </label>
                   <select
                     value={apptType}
                     onChange={e => setApptType(e.target.value)}
-                    className="glass-input w-full px-3 py-2 rounded-lg text-sm bg-white"
+                    className="glass-input w-full px-3 py-2 rounded-xl text-sm bg-white"
                   >
                     {TYPES.map(tp => (
                       <option key={tp} value={tp}>
@@ -314,22 +333,22 @@ export default function SearchDoctors() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     {t('symptoms')}
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="Describe symptoms, e.g. Fever for 2 days..."
+                    placeholder="Describe symptoms, e.g. Fever, cough for 2 days..."
                     value={symptoms}
                     onChange={e => setSymptoms(e.target.value)}
-                    className="glass-input w-full px-3 py-2 rounded-lg text-sm bg-white resize-none"
+                    className="glass-input w-full px-3 py-2 rounded-xl text-sm bg-white resize-none"
                   />
                 </div>
 
                 <button
                   onClick={handleBook}
                   disabled={booking || !selectedSlot}
-                  className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-md shadow-[#ff6f61]/20 transition-all disabled:opacity-50"
+                  className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
                 >
                   {booking ? (
                     <>
@@ -345,11 +364,11 @@ export default function SearchDoctors() {
                 </button>
               </div>
             ) : (
-              <div className="bg-white p-7 rounded-xl border border-gray-200 text-center text-gray-500 shadow-xs">
-                <Stethoscope className="w-10 h-10 mx-auto mb-2 text-[#ff6f61]/40" />
-                <p className="font-bold text-gray-800 text-sm">Select a Doctor to Consult</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Click on any doctor card on the left to see available dates and time slots.
+              <div className="glass-panel p-8 text-center text-slate-500 space-y-2">
+                <Stethoscope className="w-10 h-10 mx-auto text-blue-400/50" />
+                <p className="font-bold text-slate-800 text-sm">Select a Doctor to Consult</p>
+                <p className="text-xs text-slate-400">
+                  Click on any practitioner card on the left to see available dates and time slots.
                 </p>
               </div>
             )}

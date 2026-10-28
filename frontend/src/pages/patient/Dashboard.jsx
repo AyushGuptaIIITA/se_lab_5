@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, CheckCircle, Search, FileText, Pill, RefreshCw, Clock, User, ArrowRight, Loader2 } from 'lucide-react';
+import { Calendar, CheckCircle, Search, FileText, Pill, RefreshCw, Clock, User, ArrowRight, Loader2, Video, Activity, Sparkles, ShieldCheck } from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
@@ -10,14 +10,14 @@ import { useLanguage } from '../../contexts/LanguageContext';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
   return (
-    <div className={`bg-white p-5 rounded-xl border ${borderClass} shadow-xs`}>
+    <div className={`glass-card p-5 rounded-2xl border ${borderClass} bg-white shadow-card hover:shadow-card-hover transition-all duration-200`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</span>
-        <div className={`w-9 h-9 rounded-xl ${colorClass} flex items-center justify-center`}>
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-10 h-10 rounded-xl ${colorClass} flex items-center justify-center font-bold shadow-xs`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
-      <p className="text-2xl font-extrabold text-gray-900 mt-3">{value ?? '—'}</p>
+      <p className="text-2xl font-black text-slate-900 mt-3">{value ?? '—'}</p>
     </div>
   );
 }
@@ -35,7 +35,7 @@ export default function PatientDashboard() {
       const res = await api.get('/appointments?limit=20');
       setAppointments(res.data.appointments || []);
     } catch (err) {
-      setAlert({ type: 'error', message: 'Could not load appointments. Please ensure backend is running.' });
+      setAlert({ type: 'error', message: 'Could not load appointments. Please check backend connection.' });
     } finally { setLoading(false); }
   };
 
@@ -50,35 +50,38 @@ export default function PatientDashboard() {
       <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        {/* 1mg Styled Banner */}
-        <div className="rounded-2xl p-6 sm:p-8 bg-gradient-to-r from-[#ff6f61] to-[#fe8d00] text-white shadow-md">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Hero Banner */}
+        <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-xl shadow-blue-500/20">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center space-x-2 mb-2">
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 backdrop-blur-sm">
                   Patient Health Portal
                 </span>
-                <span className="text-xs text-white/90 font-medium">Verified Account</span>
+                <span className="flex items-center space-x-1 text-xs text-white/90 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Account Verified</span>
+                </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black">
                 Namaste, {user?.name?.split(' ')[0]}! 🙏
               </h1>
-              <p className="text-sm text-white/90 mt-1 max-w-xl">
-                Consult top doctors online, get digitally signed e-prescriptions, and order your medications directly with Tata 1mg.
+              <p className="text-sm text-blue-100 mt-1 max-w-xl">
+                Access certified medical practitioners, live video consultations, and digitally signed e-prescriptions.
               </p>
             </div>
             <div className="flex items-center space-x-3">
               <button
                 onClick={fetchData}
                 disabled={loading}
-                title="Refresh"
-                className="p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 transition-colors disabled:opacity-50"
+                title="Refresh Data"
+                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
               <Link
                 to="/patient/search-doctors"
-                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-bold text-[#ff6f61] bg-white hover:bg-gray-50 shadow-md transition-all"
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-bold text-blue-700 bg-white hover:bg-blue-50 shadow-md transition-all hover:scale-105 active:scale-95"
               >
                 <Search className="w-4 h-4" />
                 <span>{t('searchDoctors')}</span>
@@ -87,19 +90,19 @@ export default function PatientDashboard() {
           </div>
         </div>
 
-        {/* 1mg Highlights Ribbon */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-semibold">
-          <div className="bg-[#fff4f2] text-[#ff6f61] p-3 rounded-xl border border-orange-200/80 flex items-center space-x-2">
-            <span className="text-base">💊</span>
-            <span>Genuine e-Prescriptions verified by certified physicians</span>
+        {/* Highlight Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-bold">
+          <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-2xl border border-emerald-200 flex items-center space-x-2.5">
+            <span className="text-lg">💊</span>
+            <span>Certified e-Prescriptions signed via SHA-256</span>
           </div>
-          <div className="bg-[#e8f6f5] text-[#10847e] p-3 rounded-xl border border-teal-200/80 flex items-center space-x-2">
-            <span className="text-base">⚡</span>
-            <span>Instant booking & automated pharmacy dispatch</span>
+          <div className="bg-blue-50 text-blue-800 p-3.5 rounded-2xl border border-blue-200 flex items-center space-x-2.5">
+            <span className="text-lg">⚡</span>
+            <span>Real-time availability slot booking & verification</span>
           </div>
-          <div className="bg-amber-50 text-[#b26200] p-3 rounded-xl border border-amber-200/80 flex items-center space-x-2">
-            <span className="text-base">🛡️</span>
-            <span>100% confidential & encrypted consultations</span>
+          <div className="bg-indigo-50 text-indigo-800 p-3.5 rounded-2xl border border-indigo-200 flex items-center space-x-2.5">
+            <span className="text-lg">🛡️</span>
+            <span>100% confidential and end-to-end encrypted care</span>
           </div>
         </div>
 
@@ -109,50 +112,52 @@ export default function PatientDashboard() {
             icon={Calendar}
             label={t('upcomingAppointments')}
             value={upcoming.length}
-            colorClass="bg-orange-50 text-[#ff6f61]"
-            borderClass="border-orange-100"
+            colorClass="bg-blue-50 text-blue-600"
+            borderClass="border-blue-100"
           />
           <StatCard
             icon={CheckCircle}
             label="Completed Consultations"
             value={completed.length}
-            colorClass="bg-teal-50 text-[#10847e]"
-            borderClass="border-teal-100"
+            colorClass="bg-emerald-50 text-emerald-600"
+            borderClass="border-emerald-100"
           />
           <StatCard
             icon={Pill}
-            label="Total Bookings"
+            label="Total Appointments"
             value={appointments.length}
-            colorClass="bg-purple-50 text-purple-700"
+            colorClass="bg-purple-50 text-purple-600"
             borderClass="border-purple-100"
           />
         </div>
 
         {/* Next appointment */}
         {next && (
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs">
+          <div className="glass-panel p-5 rounded-2xl bg-white shadow-card">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-gray-800 uppercase tracking-wider flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-[#ff6f61]" />
-                <span>Next Scheduled Appointment</span>
+              <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <span>Next Scheduled Consultation</span>
               </h2>
               <StatusBadge status={next.status} />
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-[#fff4f2]/50 border border-orange-100">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-xl bg-[#10847e] text-white flex items-center justify-center font-bold text-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+              <div className="flex items-center space-x-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
                   {next.doctor?.name?.charAt(0) || 'D'}
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900 text-base">Dr. {next.doctor?.name || 'Specialist'}</p>
-                  <p className="text-xs font-semibold text-[#10847e]">{next.doctor?.specialization || 'General Medicine'}</p>
-                  <div className="mt-1 flex items-center space-x-4 text-xs text-gray-600">
+                  <p className="font-bold text-slate-900 text-base">
+                    {next.doctor?.name?.startsWith('Dr.') ? next.doctor?.name : `Dr. ${next.doctor?.name || 'Specialist'}`}
+                  </p>
+                  <p className="text-xs font-semibold text-blue-600">{next.doctor?.specialization || 'General Medicine'}</p>
+                  <div className="mt-1 flex items-center space-x-4 text-xs text-slate-600">
                     <span className="flex items-center space-x-1">
-                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
                       <span>{new Date(next.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
                     </span>
                     <span className="flex items-center space-x-1">
-                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
                       <span>{next.timeSlot?.start} – {next.timeSlot?.end}</span>
                     </span>
                   </div>
@@ -161,7 +166,7 @@ export default function PatientDashboard() {
               <div className="flex items-center space-x-2">
                 <Link
                   to="/patient/medical-records"
-                  className="px-4 py-2 rounded-lg text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:border-[#10847e] transition-all"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-blue-500 transition-all shadow-xs"
                 >
                   View Records
                 </Link>
@@ -172,43 +177,45 @@ export default function PatientDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent appointments */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-[#ff6f61]" />
+          <div className="lg:col-span-2 glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                <Calendar className="w-4 h-4 text-blue-600" />
                 <span>Appointment History</span>
               </h2>
-              <Link to="/patient/search-doctors" className="text-xs font-bold text-[#ff6f61] hover:underline">
+              <Link to="/patient/search-doctors" className="text-xs font-bold text-blue-600 hover:underline">
                 Book New →
               </Link>
             </div>
             {loading ? (
               <div className="py-12 flex items-center justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-[#ff6f61]" />
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
               </div>
             ) : appointments.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">
-                <Calendar className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                <p className="font-semibold text-gray-700">No appointments yet</p>
-                <p className="text-xs text-gray-400 mt-0.5">Consult with certified doctors online in minutes</p>
+              <div className="py-12 text-center text-sm text-slate-500">
+                <Calendar className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p className="font-bold text-slate-700">No appointments scheduled</p>
+                <p className="text-xs text-slate-400 mt-0.5">Consult with certified doctors online in minutes</p>
                 <Link
                   to="/patient/search-doctors"
-                  className="mt-3 inline-block px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a]"
+                  className="mt-3 inline-block px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
                 >
                   Find a Doctor →
                 </Link>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-slate-100">
                 {appointments.slice(0, 8).map(apt => (
-                  <div key={apt._id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                  <div key={apt._id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
                     <div className="flex items-center space-x-3">
-                      <div className="w-9 h-9 rounded-full bg-teal-50 border border-teal-200 text-[#10847e] flex items-center justify-center text-xs font-bold">
+                      <div className="w-9 h-9 rounded-full bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center text-xs font-bold">
                         {apt.doctor?.name?.charAt(0) || 'D'}
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-gray-900">Dr. {apt.doctor?.name || '—'}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-sm font-bold text-slate-900">
+                          {apt.doctor?.name?.startsWith('Dr.') ? apt.doctor?.name : `Dr. ${apt.doctor?.name || '—'}`}
+                        </p>
+                        <p className="text-xs text-slate-500">
                           {new Date(apt.date).toLocaleDateString('en-IN')} · {apt.timeSlot?.start}
                         </p>
                       </div>
@@ -221,26 +228,26 @@ export default function PatientDashboard() {
           </div>
 
           {/* Quick actions */}
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-3">
-            <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
-              <ArrowRight className="w-4 h-4 text-[#10847e]" />
+          <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-3">
+            <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+              <ArrowRight className="w-4 h-4 text-blue-600" />
               <span>{t('quickActions')}</span>
             </h2>
             {[
-              { to: '/patient/search-doctors', icon: Search, label: t('searchDoctors'), color: 'text-[#ff6f61] bg-[#fff4f2]' },
-              { to: '/patient/medical-records', icon: FileText, label: t('medicalRecords'), color: 'text-[#10847e] bg-[#e8f6f5]' },
-              { to: '/profile', icon: User, label: t('profile'), color: 'text-purple-700 bg-purple-50' },
+              { to: '/patient/search-doctors', icon: Search, label: t('searchDoctors'), color: 'text-blue-600 bg-blue-50' },
+              { to: '/patient/medical-records', icon: FileText, label: t('medicalRecords'), color: 'text-emerald-600 bg-emerald-50' },
+              { to: '/profile', icon: User, label: t('profile'), color: 'text-purple-600 bg-purple-50' },
             ].map(({ to, icon: Icon, label, color }) => (
               <Link
                 key={to}
                 to={to}
-                className="flex items-center space-x-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100/80 border border-gray-100 hover:border-gray-200 transition-all group"
+                className="flex items-center space-x-3 p-3 rounded-xl bg-slate-50 hover:bg-blue-50/60 border border-slate-100 hover:border-blue-200 transition-all group"
               >
-                <div className={`w-9 h-9 rounded-lg ${color} flex items-center justify-center font-bold`}>
+                <div className={`w-9 h-9 rounded-xl ${color} flex items-center justify-center font-bold`}>
                   <Icon className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-bold text-gray-800 group-hover:text-[#ff6f61] transition-colors">{label}</span>
-                <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#ff6f61] ml-auto transition-colors" />
+                <span className="text-sm font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{label}</span>
+                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 ml-auto transition-colors" />
               </Link>
             ))}
           </div>

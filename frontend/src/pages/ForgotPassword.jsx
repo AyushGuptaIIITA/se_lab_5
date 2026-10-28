@@ -47,44 +47,44 @@ export default function ForgotPassword() {
   const copyToken = () => { navigator.clipboard.writeText(token); setCopied(true); setTimeout(() => setCopied(false), 2000); };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-[#f8f9fa]">
-      <div className="w-full max-w-md text-center mb-6">
-        <div className="inline-flex items-center justify-center space-x-2 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#ff6f61] to-[#fe8d00] flex items-center justify-center shadow-md">
+    <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-50">
+      <div className="w-full max-w-md text-center mb-6 animate-fade-in">
+        <div className="inline-flex items-center justify-center space-x-2.5 mb-2">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
             <Stethoscope className="w-6 h-6 text-white" />
           </div>
-          <span className="text-3xl font-extrabold text-[#ff6f61] tracking-tight">
-            TATA <span className="text-[#10847e]">1mg</span>
+          <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Tele<span className="text-blue-600">Med</span>
           </span>
         </div>
-        <p className="text-sm font-semibold text-gray-700">{t('resetPassword')}</p>
-        <p className="text-xs text-gray-500">{step === 1 ? 'Enter your email to receive a password reset token' : 'Enter the token and create your new password'}</p>
+        <p className="text-sm font-semibold text-slate-700">{t('resetPassword')}</p>
+        <p className="text-xs text-slate-500">{step === 1 ? 'Enter your email to receive a password reset token' : 'Enter the token and create your new password'}</p>
       </div>
 
-      <div className="relative w-full max-w-md">
-        <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-lg border border-gray-200/80 space-y-5">
+      <div className="relative w-full max-w-md animate-slide-up">
+        <div className="bg-white p-7 sm:p-8 rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-200 space-y-5">
           {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
           {step === 1 ? (
             <form onSubmit={handleRequestToken} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('email')}</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">{t('email')}</label>
                 <div className="relative">
-                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <input
                     type="email"
                     required
                     placeholder="Your registered email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                    className="glass-input w-full pl-10 pr-4 py-2.5 rounded-xl text-sm placeholder-slate-400"
                   />
                 </div>
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-md shadow-[#ff6f61]/25 transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
               >
                 {loading ? (
                   <>
@@ -101,7 +101,7 @@ export default function ForgotPassword() {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="w-full text-xs font-semibold text-gray-500 hover:text-[#ff6f61] text-center py-1"
+                className="w-full text-xs font-semibold text-slate-500 hover:text-blue-600 text-center py-1"
               >
                 Already have a token? Enter it →
               </button>
@@ -109,19 +109,19 @@ export default function ForgotPassword() {
           ) : (
             <form onSubmit={handleReset} className="space-y-4">
               {token && (
-                <div className="p-3 rounded-xl bg-orange-50 border border-orange-200">
-                  <div className="flex items-center justify-between text-xs text-gray-700 font-semibold mb-1">
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200">
+                  <div className="flex items-center justify-between text-xs text-slate-700 font-bold mb-1">
                     <span>Generated Token:</span>
-                    <button type="button" onClick={copyToken} className="text-[#ff6f61] hover:underline flex items-center space-x-1">
+                    <button type="button" onClick={copyToken} className="text-blue-600 hover:underline flex items-center space-x-1">
                       {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copied ? 'Copied' : 'Copy'}</span>
                     </button>
                   </div>
-                  <p className="font-mono text-xs text-[#c8392b] break-all select-all">{token}</p>
+                  <p className="font-mono text-xs text-blue-800 break-all select-all font-semibold">{token}</p>
                 </div>
               )}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">Reset Token</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Reset Token</label>
                 <input
                   type="text"
                   required
@@ -132,21 +132,21 @@ export default function ForgotPassword() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">{t('newPassword')}</label>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">{t('newPassword')}</label>
                 <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <input
                     type={showPass ? 'text' : 'password'}
                     required
                     placeholder="Min 6 characters"
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm placeholder-gray-400"
+                    className="glass-input w-full pl-10 pr-10 py-2.5 rounded-xl text-sm placeholder-slate-400"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   >
                     {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -155,12 +155,12 @@ export default function ForgotPassword() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-[#10847e] hover:bg-[#0c6b66] shadow-md shadow-[#10847e]/25 transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
               >
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Resetting...</span>
+                    <span>Resetting password...</span>
                   </>
                 ) : (
                   <>
@@ -172,15 +172,15 @@ export default function ForgotPassword() {
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="w-full text-xs font-semibold text-gray-500 hover:text-gray-800 text-center py-1"
+                className="w-full text-xs font-semibold text-slate-500 hover:text-slate-800 text-center py-1"
               >
                 ← Back
               </button>
             </form>
           )}
 
-          <div className="pt-4 border-t border-gray-100 text-center">
-            <Link to="/" className="inline-flex items-center space-x-1.5 text-xs font-semibold text-gray-600 hover:text-[#ff6f61]">
+          <div className="pt-4 border-t border-slate-100 text-center">
+            <Link to="/" className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-600 hover:text-blue-600">
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>{t('backToLogin')}</span>
             </Link>

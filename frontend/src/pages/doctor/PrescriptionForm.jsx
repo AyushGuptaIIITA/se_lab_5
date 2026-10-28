@@ -73,7 +73,7 @@ export default function PrescriptionForm() {
     try {
       const res = await api.post(`/prescriptions/${existingPrescription._id}/send-to-pharmacy`);
       setExistingPrescription(p => ({ ...p, pharmacyStatus: res.data.prescription?.pharmacyStatus || 'sent' }));
-      setAlert({ type: 'success', message: 'Prescription successfully sent to Tata 1mg pharmacy dispatch!' });
+      setAlert({ type: 'success', message: 'Prescription successfully dispatched to designated pharmacy!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to send to pharmacy.' });
     } finally {
@@ -85,7 +85,7 @@ export default function PrescriptionForm() {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-[#ff6f61]" />
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
         </div>
       </Layout>
     );
@@ -96,26 +96,26 @@ export default function PrescriptionForm() {
       <div className="space-y-6 max-w-4xl mx-auto">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        <div className="flex items-center justify-between pb-3 border-b border-gray-200">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
           <div>
             <button
               onClick={() => navigate('/doctor/dashboard')}
-              className="flex items-center space-x-1.5 text-xs font-semibold text-gray-500 hover:text-[#ff6f61] mb-1.5 transition-colors"
+              className="flex items-center space-x-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 mb-1.5 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back to Dashboard</span>
             </button>
-            <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
-              <span className="text-[#ff6f61]">Tata 1mg Digital e-Prescription</span>
+            <h1 className="text-2xl font-black text-slate-900 flex items-center space-x-2">
+              <span>Digital e-Prescription (FR-7 & FR-8)</span>
             </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Patient: <strong className="text-gray-800">{appointment?.patient?.name}</strong> · Consultation Date: {appointment ? new Date(appointment.date).toLocaleDateString('en-IN') : ''}
+            <p className="text-xs text-slate-500 mt-0.5">
+              Patient: <strong className="text-slate-800">{appointment?.patient?.name}</strong> · Consultation Date: {appointment ? new Date(appointment.date).toLocaleDateString('en-IN') : ''}
             </p>
           </div>
           <div className="text-right">
-            <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-bold bg-[#e8f6f5] text-[#10847e] border border-teal-200">
-              <ShieldCheck className="w-4 h-4" />
-              <span>SRS FR-7 & FR-8 Compliant</span>
+            <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
+              <span>SHA-256 Digitally Signed</span>
             </span>
           </div>
         </div>
@@ -123,47 +123,47 @@ export default function PrescriptionForm() {
         {/* Existing / Signed Prescription View */}
         {existingPrescription ? (
           <div className="space-y-4">
-            <div className="bg-white p-6 sm:p-8 rounded-xl border border-teal-200 shadow-sm space-y-5">
-              <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+            <div className="glass-panel p-6 sm:p-8 rounded-2xl bg-white shadow-card space-y-5">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center space-x-2">
-                  <CheckCircle className="w-6 h-6 text-[#10847e]" />
+                  <CheckCircle className="w-6 h-6 text-emerald-600" />
                   <div>
-                    <h2 className="text-base font-bold text-gray-900">Official Certified e-Prescription</h2>
-                    <p className="text-xs text-gray-500">Cryptographically signed with SHA-256 certificate</p>
+                    <h2 className="text-base font-bold text-slate-900">Official Certified e-Prescription</h2>
+                    <p className="text-xs text-slate-500">Cryptographically signed with SHA-256 certificate</p>
                   </div>
                 </div>
                 <StatusBadge status={existingPrescription.pharmacyStatus} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Clinical Diagnosis</p>
-                  <p className="font-semibold text-gray-900 mt-1">{existingPrescription.diagnosis}</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Clinical Diagnosis</p>
+                  <p className="font-semibold text-slate-900 mt-1">{existingPrescription.diagnosis}</p>
                 </div>
                 {existingPrescription.additionalNotes && (
                   <div>
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Instructions & Advice</p>
-                    <p className="text-gray-800 mt-1">{existingPrescription.additionalNotes}</p>
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Instructions & Advice</p>
+                    <p className="text-slate-800 mt-1">{existingPrescription.additionalNotes}</p>
                   </div>
                 )}
               </div>
 
               <div>
-                <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Prescribed Medications</p>
-                <div className="divide-y divide-gray-100 border border-gray-200 rounded-xl overflow-hidden">
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Prescribed Medications</p>
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
                   {existingPrescription.medications?.map((med, i) => (
                     <div key={i} className="p-3.5 bg-white flex items-center justify-between">
                       <div className="flex items-start space-x-3">
-                        <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#ff6f61] flex items-center justify-center font-bold">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
                           <Pill className="w-4 h-4" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{med.name}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-sm font-bold text-slate-900">{med.name}</p>
+                          <p className="text-xs text-slate-500">
                             {med.dosage} · {med.frequency} · Duration: {med.duration}
                           </p>
                           {med.instructions && (
-                            <p className="text-xs text-[#10847e] font-semibold mt-0.5">Note: {med.instructions}</p>
+                            <p className="text-xs text-blue-600 font-semibold mt-0.5">Note: {med.instructions}</p>
                           )}
                         </div>
                       </div>
@@ -174,31 +174,31 @@ export default function PrescriptionForm() {
 
               {/* Digital Signature Block (FR-7) */}
               {existingPrescription.digitalSignature?.signedBy && (
-                <div className="p-4 rounded-xl bg-[#e8f6f5] border border-teal-200 text-xs text-gray-700 space-y-1">
-                  <div className="flex items-center space-x-1.5 text-[#10847e] font-bold uppercase tracking-wider mb-1">
+                <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 text-xs text-slate-700 space-y-1">
+                  <div className="flex items-center space-x-1.5 text-blue-700 font-bold uppercase tracking-wider mb-1">
                     <Shield className="w-4 h-4" />
                     <span>Cryptographic Digital Signature (FR-7)</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-medium">
                     <p>Signed By: <strong>Dr. {existingPrescription.digitalSignature.signedBy}</strong></p>
                     <p>Timestamp: <strong>{new Date(existingPrescription.digitalSignature.signedAt).toLocaleString('en-IN')}</strong></p>
-                    <p className="sm:col-span-2">Cert ID: <code className="text-[#10847e] font-mono font-bold">{existingPrescription.digitalSignature.certificateId}</code></p>
-                    <p className="sm:col-span-2 truncate">SHA-256 Hash: <code className="text-gray-500 font-mono text-[11px]">{existingPrescription.digitalSignature.signatureHash}</code></p>
+                    <p className="sm:col-span-2">Cert ID: <code className="text-blue-700 font-mono font-bold">{existingPrescription.digitalSignature.certificateId}</code></p>
+                    <p className="sm:col-span-2 truncate">SHA-256 Hash: <code className="text-slate-500 font-mono text-[11px]">{existingPrescription.digitalSignature.signatureHash}</code></p>
                   </div>
                 </div>
               )}
 
               {/* Pharmacy Dispatch Action (FR-8) */}
-              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-gray-100">
-                <div className="text-xs text-gray-600">
-                  <span>Pharmacy Status: </span>
-                  <strong className="uppercase text-[#10847e]">{existingPrescription.pharmacyStatus}</strong>
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-100">
+                <div className="text-xs text-slate-600">
+                  <span>Pharmacy Dispatch: </span>
+                  <strong className="uppercase text-blue-700">{existingPrescription.pharmacyStatus}</strong>
                 </div>
                 {existingPrescription.pharmacyStatus === 'pending' ? (
                   <button
                     onClick={handleSendPharmacy}
                     disabled={sendingPharmacy}
-                    className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-sm transition-all disabled:opacity-50"
+                    className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50"
                   >
                     {sendingPharmacy ? (
                       <>
@@ -208,14 +208,14 @@ export default function PrescriptionForm() {
                     ) : (
                       <>
                         <Send className="w-3.5 h-3.5" />
-                        <span>Dispatch to 1mg Pharmacy (FR-8)</span>
+                        <span>Dispatch to Partner Pharmacy (FR-8)</span>
                       </>
                     )}
                   </button>
                 ) : (
-                  <span className="text-xs font-bold text-[#10847e] flex items-center space-x-1.5">
+                  <span className="text-xs font-bold text-emerald-700 flex items-center space-x-1.5">
                     <CheckCircle className="w-4 h-4" />
-                    <span>Prescription dispatched to pharmacy for fulfillment</span>
+                    <span>Prescription dispatched to pharmacy adapter for fulfillment</span>
                   </span>
                 )}
               </div>
@@ -223,7 +223,7 @@ export default function PrescriptionForm() {
 
             <button
               onClick={() => navigate('/doctor/dashboard')}
-              className="px-4 py-2 rounded-lg text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:border-gray-300"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-slate-300"
             >
               ← Return to Dashboard
             </button>
@@ -231,26 +231,26 @@ export default function PrescriptionForm() {
         ) : (
           <form onSubmit={handleGenerate} className="space-y-5">
             {/* Diagnosis */}
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-2">
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">{t('diagnosis')} *</label>
+            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{t('diagnosis')} *</label>
               <textarea
                 required
                 rows={2}
                 value={diagnosis}
                 onChange={e => setDiagnosis(e.target.value)}
-                placeholder="Enter clinical diagnosis (e.g. Acute Upper Respiratory Infection)..."
-                className="glass-input w-full p-2.5 rounded-lg text-sm bg-white resize-none"
+                placeholder="Enter clinical diagnosis (e.g. Acute Pharyngitis with Low Grade Fever)..."
+                className="glass-input w-full p-3 rounded-xl text-sm bg-white resize-none"
               />
             </div>
 
             {/* Medications List */}
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">{t('medications')} *</label>
+            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{t('medications')} *</label>
                 <button
                   type="button"
                   onClick={addMed}
-                  className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#ff6f61] bg-[#fff4f2] border border-orange-200 hover:bg-orange-100 transition-colors"
+                  className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{t('addMedication')}</span>
@@ -258,9 +258,9 @@ export default function PrescriptionForm() {
               </div>
 
               {medications.map((med, idx) => (
-                <div key={idx} className="p-4 rounded-xl bg-gray-50/80 border border-gray-200 space-y-3">
+                <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-700">Medication #{idx + 1}</span>
+                    <span className="text-xs font-bold text-slate-700">Medication #{idx + 1}</span>
                     {medications.length > 1 && (
                       <button
                         type="button"
@@ -273,56 +273,56 @@ export default function PrescriptionForm() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">{t('drugName')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('drugName')} *</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Dolo 650mg / Azithromycin 500mg"
+                        placeholder="e.g. Paracetamol 650mg / Amoxicillin 500mg"
                         value={med.name}
                         onChange={e => updateMed(idx, 'name', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">{t('dosage')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('dosage')} *</label>
                       <input
                         type="text"
                         required
                         placeholder="e.g. 1 Tablet"
                         value={med.dosage}
                         onChange={e => updateMed(idx, 'dosage', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">{t('frequency')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('frequency')} *</label>
                       <select
                         value={med.frequency}
                         onChange={e => updateMed(idx, 'frequency', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
                       >
                         {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">{t('duration')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('duration')} *</label>
                       <input
                         type="text"
                         required
                         placeholder="e.g. 5 days"
                         value={med.duration}
                         onChange={e => updateMed(idx, 'duration', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
                       />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">{t('instructions')}</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('instructions')}</label>
                       <input
                         type="text"
-                        placeholder="e.g. Take after breakfast with water"
+                        placeholder="e.g. Take after meals with warm water"
                         value={med.instructions}
                         onChange={e => updateMed(idx, 'instructions', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
                       />
                     </div>
                   </div>
@@ -331,14 +331,14 @@ export default function PrescriptionForm() {
             </div>
 
             {/* Additional notes */}
-            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-xs space-y-2">
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">{t('additionalNotes')}</label>
+            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-2">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{t('additionalNotes')}</label>
               <textarea
                 rows={2}
                 value={additionalNotes}
                 onChange={e => setAdditionalNotes(e.target.value)}
-                placeholder="Dietary instructions, fluids, next review date..."
-                className="glass-input w-full p-2.5 rounded-lg text-sm bg-white resize-none"
+                placeholder="Dietary instructions, fluids, follow-up recommendations..."
+                className="glass-input w-full p-3 rounded-xl text-sm bg-white resize-none"
               />
             </div>
 
@@ -346,14 +346,14 @@ export default function PrescriptionForm() {
               <button
                 type="button"
                 onClick={() => navigate('/doctor/dashboard')}
-                className="px-4 py-2.5 rounded-lg text-xs font-bold text-gray-600 bg-white border border-gray-200 hover:border-gray-300"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300"
               >
                 {t('cancel')}
               </button>
               <button
                 type="submit"
                 disabled={generating}
-                className="flex items-center space-x-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-md shadow-[#ff6f61]/25 transition-all disabled:opacity-50"
+                className="flex items-center space-x-2 px-6 py-3 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
               >
                 {generating ? (
                   <>

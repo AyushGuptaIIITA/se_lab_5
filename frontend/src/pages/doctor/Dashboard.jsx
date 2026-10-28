@@ -10,14 +10,14 @@ import { useLanguage } from '../../contexts/LanguageContext';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
   return (
-    <div className={`bg-white p-5 rounded-xl border ${borderClass} shadow-xs`}>
+    <div className={`glass-card p-5 rounded-2xl border ${borderClass} bg-white shadow-card hover:shadow-card-hover transition-all duration-200`}>
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{label}</span>
-        <div className={`w-9 h-9 rounded-xl ${colorClass} flex items-center justify-center`}>
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <div className={`w-10 h-10 rounded-xl ${colorClass} flex items-center justify-center font-bold shadow-xs`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
-      <p className="text-2xl font-extrabold text-gray-900 mt-3">{value ?? '—'}</p>
+      <p className="text-2xl font-black text-slate-900 mt-3">{value ?? '—'}</p>
     </div>
   );
 }
@@ -65,23 +65,23 @@ export default function DoctorDashboard() {
       <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        {/* 1mg Doctor Banner */}
-        <div className="rounded-2xl p-6 sm:p-8 bg-gradient-to-r from-[#10847e] to-[#0c6b66] text-white shadow-md">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Doctor Header Banner */}
+        <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-xl shadow-blue-500/20">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center space-x-2 mb-2">
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-white/20 text-white border border-white/30 backdrop-blur-sm">
                   Doctor Clinical Workspace
                 </span>
                 <span className="flex items-center space-x-1 text-xs text-white/90">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Available for Consultations</span>
+                  <span>Accepting Patients</span>
                 </span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black">
-                Dr. {user?.name} 🩺
+                {user?.name?.startsWith('Dr.') ? user?.name : `Dr. ${user?.name}`} 🩺
               </h1>
-              <p className="text-sm text-white/90 mt-1">
+              <p className="text-sm text-blue-100 mt-1">
                 {user?.specialization} · License: {user?.licenseNumber || 'MCI-VERIFIED'} · Fee: ₹{user?.consultationFee || 200}
               </p>
             </div>
@@ -90,13 +90,13 @@ export default function DoctorDashboard() {
                 onClick={fetchData}
                 disabled={loading}
                 title="Refresh"
-                className="p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 transition-colors disabled:opacity-50"
+                className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
               <Link
                 to="/doctor/schedule"
-                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-bold text-[#10847e] bg-white hover:bg-gray-50 shadow-md transition-all"
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-bold text-blue-700 bg-white hover:bg-blue-50 shadow-md transition-all hover:scale-105 active:scale-95"
               >
                 <Calendar className="w-4 h-4" />
                 <span>{t('manageSchedule')}</span>
@@ -109,72 +109,72 @@ export default function DoctorDashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             icon={Calendar}
-            label="Today's Patients"
+            label="Today's Consultations"
             value={todayApts.length}
-            colorClass="bg-orange-50 text-[#ff6f61]"
-            borderClass="border-orange-100"
+            colorClass="bg-blue-50 text-blue-600"
+            borderClass="border-blue-100"
           />
           <StatCard
             icon={Clock}
             label="Pending Confirmations"
             value={pending.length}
-            colorClass="bg-amber-50 text-amber-700"
+            colorClass="bg-amber-50 text-amber-600"
             borderClass="border-amber-100"
           />
           <StatCard
             icon={CheckCircle}
             label="Completed Sessions"
             value={completed.length}
-            colorClass="bg-teal-50 text-[#10847e]"
-            borderClass="border-teal-100"
+            colorClass="bg-emerald-50 text-emerald-600"
+            borderClass="border-emerald-100"
           />
           <StatCard
             icon={Users}
-            label="Total Registered Patients"
+            label="Total Patients"
             value={[...new Set(appointments.map(a => a.patient?._id))].length}
-            colorClass="bg-purple-50 text-purple-700"
+            colorClass="bg-purple-50 text-purple-600"
             borderClass="border-purple-100"
           />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Today's schedule */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
-                <Calendar className="w-4 h-4 text-[#ff6f61]" />
+          <div className="lg:col-span-2 glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                <Calendar className="w-4 h-4 text-blue-600" />
                 <span>{t('todaySchedule')}</span>
               </h2>
-              <span className="text-xs font-semibold text-gray-500">
+              <span className="text-xs font-semibold text-slate-500">
                 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
               </span>
             </div>
             {loading ? (
               <div className="py-12 flex items-center justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-[#10847e]" />
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
               </div>
             ) : todayApts.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-500">
-                <Calendar className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-                <p className="font-semibold text-gray-700">No consultations scheduled for today</p>
-                <p className="text-xs text-gray-400 mt-0.5">Your schedule slots will appear here when patients book</p>
+              <div className="py-12 text-center text-sm text-slate-500">
+                <Calendar className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                <p className="font-bold text-slate-700">No consultations scheduled for today</p>
+                <p className="text-xs text-slate-400 mt-0.5">Your booked appointments will appear here automatically</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-slate-100">
                 {todayApts.map(apt => (
-                  <div key={apt._id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div key={apt._id} className="p-4 hover:bg-slate-50 transition-colors">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-teal-50 text-[#10847e] border border-teal-200 flex items-center justify-center font-bold text-sm">
+                        <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center font-bold text-sm">
                           {apt.patient?.name?.charAt(0) || 'P'}
                         </div>
                         <div>
-                          <p className="font-bold text-gray-900 text-sm">{apt.patient?.name || 'Unknown Patient'}</p>
-                          <p className="text-xs text-gray-500">
-                            {apt.timeSlot?.start} – {apt.timeSlot?.end} · <span className="capitalize font-semibold text-[#10847e]">{apt.type}</span>
+                          <p className="font-bold text-slate-900 text-sm">{apt.patient?.name || 'Unknown Patient'}</p>
+                          <p className="text-xs text-slate-500">
+                            {apt.timeSlot?.start} – {apt.timeSlot?.end} · <span className="capitalize font-semibold text-blue-600">{apt.type}</span>
                           </p>
                           {apt.symptoms && (
-                            <p className="text-xs text-gray-600 mt-1 bg-gray-50 p-1.5 rounded border border-gray-100 line-clamp-1">
+                            <p className="text-xs text-slate-600 mt-1 bg-slate-50 p-2 rounded-lg border border-slate-200 line-clamp-1">
                               <strong>Symptoms:</strong> {apt.symptoms}
                             </p>
                           )}
@@ -184,13 +184,13 @@ export default function DoctorDashboard() {
                         <StatusBadge status={apt.status} />
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2 mt-3 pl-13">
+                    <div className="flex items-center space-x-2 mt-3 pl-12">
                       {apt.status === 'pending' && (
                         <>
                           <button
                             onClick={() => handleStatus(apt._id, 'confirmed')}
                             disabled={!!actionLoading}
-                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-[#10847e] hover:bg-[#0c6b66] transition-colors disabled:opacity-50"
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
                           >
                             <Check className="w-3.5 h-3.5" />
                             <span>Confirm Slot</span>
@@ -208,7 +208,7 @@ export default function DoctorDashboard() {
                       {apt.status === 'confirmed' && (
                         <Link
                           to={`/doctor/consultation/${apt._id}`}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-[#ff6f61] hover:bg-[#e2584a] shadow-xs transition-colors"
+                          className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all"
                         >
                           <Video className="w-3.5 h-3.5" />
                           <span>Enter Consultation Room</span>
@@ -217,7 +217,7 @@ export default function DoctorDashboard() {
                       {apt.status === 'completed' && (
                         <Link
                           to={`/doctor/prescription/${apt._id}`}
-                          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-[#10847e] bg-[#e8f6f5] border border-teal-200 hover:bg-teal-100 transition-colors"
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
                         >
                           <FileText className="w-3.5 h-3.5" />
                           <span>Issue e-Prescription</span>
@@ -230,26 +230,26 @@ export default function DoctorDashboard() {
             )}
           </div>
 
-          {/* Upcoming */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-gray-100">
-              <h2 className="text-base font-bold text-gray-900 flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-[#fe8d00]" />
-                <span>Next 7 Days Schedule</span>
+          {/* Upcoming Consultations */}
+          <div className="glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
+            <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50">
+              <h2 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                <Clock className="w-4 h-4 text-amber-500" />
+                <span>Upcoming (Next 7 Days)</span>
               </h2>
             </div>
             {upcoming.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">
-                <p className="font-semibold text-gray-700">No upcoming appointments</p>
+              <div className="py-8 text-center text-sm text-slate-400">
+                <p className="font-semibold text-slate-600">No upcoming appointments</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
                 {upcoming.slice(0, 10).map(apt => (
-                  <div key={apt._id} className="p-3.5 hover:bg-gray-50 transition-colors">
+                  <div key={apt._id} className="p-3.5 hover:bg-slate-50 transition-colors">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-bold text-gray-900">{apt.patient?.name}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-sm font-bold text-slate-900">{apt.patient?.name}</p>
+                        <p className="text-xs text-slate-500">
                           {new Date(apt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {apt.timeSlot?.start}
                         </p>
                       </div>

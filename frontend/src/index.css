@@ -5,72 +5,43 @@
 @layer base {
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    @apply bg-[#f8f9fa] text-[#212121] antialiased;
+    @apply bg-slate-50 text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900;
   }
 }
 
-/* Tata 1mg Clean Card Styles */
+/* Glass & Card Utilities */
 .glass-panel {
   background: #ffffff;
-  border: 1px solid #e0e0e0;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+  border-radius: 1rem;
 }
 
 .glass-card {
   background: #ffffff;
-  border: 1px solid #ebebeb;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
-  border-radius: 12px;
-  transition: all 0.2s ease-in-out;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  border-radius: 0.875rem;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glass-card:hover {
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  border-color: #ff6f61;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -4px rgba(37, 99, 235, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
+  border-color: #93c5fd;
 }
 
 .glass-input {
   background: #ffffff;
-  border: 1px solid #d1d5db;
-  color: #212121;
+  border: 1px solid #cbd5e1;
+  color: #1e293b;
   transition: all 0.2s ease-in-out;
 }
 
 .glass-input:focus {
-  border-color: #ff6f61;
+  border-color: #2563eb;
   outline: none;
-  box-shadow: 0 0 0 3px rgba(255, 111, 97, 0.18);
-}
-
-/* 1mg Button utilities */
-.btn-1mg-primary {
-  background-color: #ff6f61;
-  color: #ffffff;
-  font-weight: 600;
-  transition: background-color 0.15s ease-in-out;
-}
-.btn-1mg-primary:hover {
-  background-color: #e2584a;
-}
-
-.btn-1mg-secondary {
-  background-color: #10847e;
-  color: #ffffff;
-  font-weight: 600;
-  transition: background-color 0.15s ease-in-out;
-}
-.btn-1mg-secondary:hover {
-  background-color: #0c6b66;
-}
-
-.btn-1mg-outline {
-  border: 1.5px solid #ff6f61;
-  color: #ff6f61;
-  background-color: transparent;
-  font-weight: 600;
-}
-.btn-1mg-outline:hover {
-  background-color: #fff4f2;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 /* Custom scrollbar */
@@ -80,30 +51,14 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
+  background: #cbd5e1;
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.25s ease-out forwards;
+  background: #94a3b8;
 }

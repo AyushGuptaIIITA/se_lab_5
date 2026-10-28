@@ -82,21 +82,20 @@ router.get('/:id/availability', async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
-    // Parse the date to get the day of week
-    const queryDate = new Date(date);
+    // Parse YYYY-MM-DD correctly without UTC midnight offset issues
+    const [year, month, day] = date.split('-').map(Number);
+    const queryDate = new Date(year, month - 1, day);
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const dayOfWeek = days[queryDate.getDay()];
 
-    // Get doctor's available slots for this day
+    // Get doctor's active slots for this day
     const daySlots = (doctor.availableSlots || []).filter(
       slot => slot.day === dayOfWeek && slot.isActive
     );
 
     // Get existing appointments for this doctor on this date
-    const startOfDay = new Date(queryDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(queryDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     const existingAppointments = await Appointment.find({
       doctor: req.params.id,
@@ -104,21 +103,34 @@ router.get('/:id/availability', async (req, res) => {
       status: { $nin: ['cancelled', 'rescheduled'] }
     });
 
-    // Filter out already booked slots
+    // Booked slot keys
     const bookedSlots = existingAppointments.map(apt => `${apt.timeSlot.start}-${apt.timeSlot.end}`);
 
-    const availableSlots = daySlots.filter(slot => {
-      const slotKey = `${slot.startTime}-${slot.endTime}`;
-      return !bookedSlots.includes(slotKey);
+    // Return slots with standardized { start, end, available } properties for the frontend
+    const slots = daySlots.map(slot => {
+      const start = slot.startTime || slot.start;
+      const end = slot.endTime || slot.end;
+      const isBooked = bookedSlots.includes(`${start}-${end}`);
+      return {
+        _id: slot._id,
+        start,
+        end,
+        startTime: start,
+        endTime: end,
+        available: !isBooked,
+        isBooked
+      };
     });
+
+    const availableCount = slots.filter(s => s.available).length;
 
     res.json({
       doctor: { _id: doctor._id, name: doctor.name, specialization: doctor.specialization },
       date,
       dayOfWeek,
-      slots: availableSlots,
-      totalSlots: daySlots.length,
-      availableCount: availableSlots.length
+      slots,
+      totalSlots: slots.length,
+      availableCount
     });
   } catch (err) {
     console.error('Get availability error:', err);
