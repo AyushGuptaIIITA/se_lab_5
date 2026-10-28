@@ -5,6 +5,8 @@ const { auth } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 const crypto = require('crypto');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'telemed_default_secure_jwt_secret_2026_fallback_key';
+
 const router = express.Router();
 
 // POST /api/auth/register
@@ -61,7 +63,7 @@ router.post('/register', async (req, res) => {
     // Generate token
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email, name: user.name },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -121,7 +123,7 @@ router.post('/login', async (req, res) => {
     // Generate token
     const token = jwt.sign(
       { id: user._id, role: user.role, email: user.email, name: user.name },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
