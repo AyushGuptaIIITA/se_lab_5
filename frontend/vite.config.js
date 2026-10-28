@@ -9,12 +9,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
-        secure: false,
       },
     },
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
   },
 });

@@ -99,10 +99,10 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
+    <div className="app-shell min-h-screen bg-slate-950 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="dashboard-content flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         {/* Alert notification banner */}
         {alert && (
           <div
@@ -131,7 +131,7 @@ export default function Dashboard() {
 
         {/* Hero Header Banner */}
         <div
-          className={`relative overflow-hidden rounded-2xl p-6 sm:p-8 border shadow-xl ${
+          className={`dashboard-hero relative overflow-hidden rounded-2xl p-6 sm:p-8 border shadow-xl ${
             role === 'admin'
               ? 'bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-slate-900 border-purple-500/20'
               : 'bg-gradient-to-r from-indigo-900/40 via-blue-900/30 to-slate-900 border-indigo-500/20'

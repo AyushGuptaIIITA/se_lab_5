@@ -1,48 +1,59 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const UserSchema = new mongoose.Schema(
-  {
-    username: {
-      type: String,
-      required: [true, 'Username is required'],
-      trim: true,
-      minlength: [2, 'Username must be at least 2 characters long'],
-    },
-    email: {
-      type: String,
-      required: [true, 'Email is required'],
-      unique: true,
-      lowercase: true,
-      trim: true,
-      match: [/\S+@\S+\.\S+/, 'Please provide a valid email address'],
-    },
-    password: {
-      type: String,
-      required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters long'],
-    },
-    role: {
-      type: String,
-      enum: ['user', 'admin'],
-      default: 'user',
-    },
-    resetPasswordToken: {
-      type: String,
-      default: null,
-    },
-    resetPasswordExpires: {
-      type: Date,
-      default: null,
-    },
+const availableSlotSchema = new mongoose.Schema({
+  day: {
+    type: String,
+    enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+    required: true
   },
-  {
-    timestamps: true,
-  }
-);
+  startTime: { type: String, required: true },
+  endTime: { type: String, required: true },
+  isActive: { type: Boolean, default: true }
+}, { _id: true });
 
-// Hash password before saving if modified
-UserSchema.pre('save', async function (next) {
+const addressSchema = new mongoose.Schema({
+  village: String,
+  district: String,
+  state: String,
+  pincode: String
+}, { _id: false });
+
+const emergencyContactSchema = new mongoose.Schema({
+  name: String,
+  phone: String,
+  relation: String
+}, { _id: false });
+
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, required: true },
+  phone: { type: String, trim: true },
+  role: { type: String, enum: ['patient', 'doctor', 'admin'], required: true },
+
+  // Doctor-specific fields
+  specialization: { type: String, trim: true },
+  licenseNumber: { type: String, trim: true },
+  bio: { type: String },
+  consultationFee: { type: Number },
+  availableSlots: [availableSlotSchema],
+
+  // Patient-specific fields
+  dateOfBirth: { type: Date },
+  gender: { type: String, enum: ['male', 'female', 'other'] },
+  bloodGroup: { type: String },
+  address: addressSchema,
+  emergencyContact: emergencyContactSchema,
+
+  // Common
+  profileImage: { type: String },
+  status: { type: String, enum: ['active', 'suspended'], default: 'active' },
+  lastLogin: { type: Date }
+}, { timestamps: true });
+
+// Pre-save hook for password hashing
+userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   try {
     const salt = await bcrypt.genSalt(10);
@@ -53,9 +64,9 @@ UserSchema.pre('save', async function (next) {
   }
 });
 
-// Instance method to compare password
-UserSchema.methods.comparePassword = async function (candidatePassword) {
+// Instance method to compare passwords
+userSchema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = mongoose.model('User', UserSchema);
+module.exports = mongoose.model('User', userSchema);

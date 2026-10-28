@@ -100,7 +100,7 @@ export default function EditProfile() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
+    <div className="app-shell min-h-screen bg-slate-950 flex flex-col">
       <Navbar />
 
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-8">

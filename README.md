@@ -1,203 +1,297 @@
-# 🛡️ SE Lab 5 - Full-Stack Role-Based Authentication & User Portal
+# 🏥 Telemedicine Appointment & e-Prescription Platform
 
-An enterprise-grade, modern full-stack web application designed for **Software Engineering Lab 5**. Built with **React 18, Vite, Tailwind CSS, Node.js, Express, and MongoDB**, featuring secure JWT authentication, bcrypt password encryption, role-based dashboards, and password recovery.
-
----
-
-## ✨ Features
-
-- 🔐 **Secure Authentication**:
-  - User Registration with client & server-side validation.
-  - Password strength meter (Weak / Fair / Good / Strong).
-  - Secure Login with bcrypt-hashed passwords and JSON Web Tokens (JWT).
-  - Quick-fill test buttons for instant evaluator demonstration.
-- 🔑 **Password Recovery (Forgot Password Flow)**:
-  - Generates secure cryptographic reset tokens with 1-hour expiration.
-  - Interactive reset UI to change password with token verification.
-- 👥 **Role-Based Access Control (RBAC)**:
-  - **Standard User**: View account status, edit profile details, update password.
-  - **Administrator**: Live analytics cards (total users, admin count, regular users, system health), interactive User Management Table with search, role promotion/demotion, and user deletion.
-- 🎨 **Modern Design & UX**:
-  - Glassmorphic slate/indigo aesthetic with smooth transitions and glow accents.
-  - Feather icons with `lucide-react`.
-  - Non-intrusive alert notification banners (no dated browser `alert()` popups).
-  - Responsive layout for desktop, tablet, and mobile.
-- 🚀 **Production-Ready Deployment**:
-  - Optimized production build using Vite.
-  - Backend statically serves the built frontend for a unified, single-service deployment on **Render** (zero CORS problems, 100% free tier compatible).
+A complete, production-ready Telemedicine web application implementing all 13 functional requirements from the SRS document. Built with **React 18 + Vite + TailwindCSS** (frontend) and **Node.js + Express + MongoDB** (backend).
 
 ---
 
-## 📁 Project Architecture
+## ✨ Features (FR Coverage)
+
+| FR | Feature | Status |
+|----|---------|--------|
+| FR-1 | Patient & Doctor Registration with role-based profiles | ✅ |
+| FR-2 | Secure Login / Logout with JWT | ✅ |
+| FR-3 | Password Recovery (forgot/reset flow) | ✅ |
+| FR-4 | Doctor Search by name/specialization + availability slots | ✅ |
+| FR-5 | Appointment Booking with double-booking prevention | ✅ |
+| FR-6 | Video Consultation Room with network-event handling & auto-reconnect | ✅ |
+| FR-7 | Digital e-Prescription with SHA-256 signature | ✅ |
+| FR-8 | Send Prescription to Pharmacy (simulated adapter) | ✅ |
+| FR-9 | Medical Records viewer (patient own + doctor access) | ✅ |
+| FR-10 | Admin User Management (activate/suspend/delete) | ✅ |
+| FR-11 | Role-Based Access Control (Patient / Doctor / Admin) | ✅ |
+| FR-12 | Audit Logging (all sensitive actions logged) | ✅ |
+| FR-13 | Multi-language Support (English / Hindi) | ✅ |
+
+---
+
+## 🖥️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, Vite 5, TailwindCSS 3, React Router v6, Axios, Lucide Icons |
+| Backend | Node.js, Express.js, Mongoose |
+| Database | MongoDB (Atlas for production, local for dev) |
+| Auth | JSON Web Tokens (JWT), bcryptjs |
+| Deploy | Render (single unified service) |
+
+---
+
+## 🚀 Local Development Setup
+
+### Prerequisites
+- **Node.js** v18+ — [Download](https://nodejs.org/)
+- **MongoDB Community** — [Download](https://www.mongodb.com/try/download/community) **OR** [MongoDB Atlas](https://cloud.mongodb.com) (free)
+- **Git**
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/YOUR_USERNAME/se_lab_5.git
+cd se_lab_5
+```
+
+### 2. Configure Backend Environment
+```bash
+cd backend
+cp .env.example .env
+```
+
+Edit `backend/.env`:
+```env
+PORT=5000
+MONGO_URI=mongodb://127.0.0.1:27017/telemedicine   # or your Atlas URI
+JWT_SECRET=your_super_secret_key_here_change_this
+NODE_ENV=development
+```
+
+### 3. Install Dependencies
+```bash
+# From repo root:
+npm run install:all
+```
+
+Or individually:
+```bash
+npm install --prefix backend
+npm install --prefix frontend
+```
+
+### 4. Seed Demo Data
+Make sure MongoDB is running, then:
+```bash
+cd backend
+node seed.js
+```
+
+This creates **6 demo accounts**:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Patient | patient1@demo.com | password123 |
+| Patient | patient2@demo.com | password123 |
+| Doctor (General Medicine) | dr.sharma@demo.com | password123 |
+| Doctor (Pediatrics) | dr.patel@demo.com | password123 |
+| Doctor (Cardiology) | dr.gupta@demo.com | password123 |
+| Admin | admin@demo.com | password123 |
+
+### 5. Start Development Servers
+
+**Option A — Two terminals (recommended)**
+```bash
+# Terminal 1 — Backend
+cd backend
+npm run dev
+
+# Terminal 2 — Frontend
+cd frontend
+npm run dev
+```
+
+**Option B — From root**
+```bash
+npm run dev:backend   # starts backend on :5000
+npm run dev:frontend  # starts frontend on :5173
+```
+
+Open **http://localhost:5173** in your browser.
+
+---
+
+## 🏗️ Production Build (local test)
+
+```bash
+# Build frontend
+cd frontend
+npm run build
+
+# Start production server (serves built frontend from Express)
+cd ..
+NODE_ENV=production node backend/server.js
+```
+
+Open **http://localhost:5000**
+
+---
+
+## ☁️ Deploy to Render
+
+### Step 1 — Push to GitHub
+```bash
+git add .
+git commit -m "feat: complete telemedicine platform"
+git push origin main
+```
+
+### Step 2 — Create MongoDB Atlas Database
+1. Go to [cloud.mongodb.com](https://cloud.mongodb.com) → Create free cluster
+2. Database Access → Add user (username + password)
+3. Network Access → Allow from anywhere (`0.0.0.0/0`)
+4. Connect → Get connection string, e.g.:
+   ```
+   mongodb+srv://USERNAME:PASSWORD@cluster0.xxxxx.mongodb.net/telemedicine?retryWrites=true&w=majority
+   ```
+
+### Step 3 — Create Render Web Service
+1. Go to [render.com](https://render.com) → New → **Web Service**
+2. Connect your GitHub repo `se_lab_5`
+3. Configure:
+
+| Setting | Value |
+|---------|-------|
+| **Environment** | Node |
+| **Build Command** | `npm run build` |
+| **Start Command** | `npm start` |
+| **Root Directory** | *(leave blank)* |
+
+4. Add Environment Variables:
+
+| Key | Value |
+|-----|-------|
+| `NODE_ENV` | `production` |
+| `PORT` | `10000` |
+| `MONGO_URI` | *your Atlas connection string* |
+| `JWT_SECRET` | *a strong random string (32+ chars)* |
+
+5. Click **Create Web Service** → wait ~3 minutes for build
+
+### Step 4 — Seed Production Database
+After first deploy, open Render **Shell** tab and run:
+```bash
+node backend/seed.js
+```
+
+Your app will be live at `https://your-service-name.onrender.com` 🎉
+
+> **Note:** Free Render services spin down after 15 min of inactivity; first load after idle takes ~30s.
+
+---
+
+## 📁 Project Structure
 
 ```
 se_lab_5/
 ├── backend/
 │   ├── middleware/
-│   │   └── auth.js             # JWT verification & admin authorization
+│   │   ├── auth.js           # JWT verify + role guards
+│   │   └── auditLog.js       # Audit log helper
 │   ├── models/
-│   │   └── User.js             # User Mongoose schema & bcrypt hooks
+│   │   ├── User.js           # Patient/Doctor/Admin schema
+│   │   ├── Appointment.js
+│   │   ├── Prescription.js   # With digital signature
+│   │   ├── ConsultationSession.js
+│   │   └── AuditLog.js
 │   ├── routes/
-│   │   ├── auth.js             # /register, /login, /forgot-password, /reset-password, /me
-│   │   └── user.js             # /dashboard, /profile/edit, /change-password, /admin/users
-│   ├── .env                    # Environment configuration
-│   ├── .env.example            # Template for environment variables
-│   ├── package.json            # Backend dependencies
-│   └── server.js               # Express application & static file server
+│   │   ├── auth.js           # Register, Login, Reset password
+│   │   ├── doctors.js        # Search, availability, schedule
+│   │   ├── appointments.js   # CRUD + status management
+│   │   ├── consultation.js   # Start/end sessions
+│   │   ├── prescriptions.js  # Create, sign, send to pharmacy
+│   │   ├── medicalRecords.js
+│   │   └── admin.js          # User management, reports, audit
+│   ├── utils/
+│   │   └── pharmacyAdapter.js
+│   ├── server.js
+│   ├── seed.js
+│   └── .env
+│
 ├── frontend/
-│   ├── public/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard.jsx   # Role-based dashboard (Admin vs User)
-│   │   │   ├── EditProfile.jsx # Profile information & password changer
-│   │   │   ├── ForgotPassword.jsx # 2-step token reset flow
-│   │   │   ├── Login.jsx       # Login card with demo helpers
-│   │   │   ├── Navbar.jsx      # Navigation bar with user badge
-│   │   │   └── Register.jsx    # Registration with strength meter
-│   │   ├── services/
-│   │   │   └── api.js          # Axios client with JWT interceptor
-│   │   ├── App.jsx             # React router & protected routes
-│   │   ├── index.css           # Tailwind CSS directives & glass styles
-│   │   └── main.jsx            # React root mount
-│   ├── index.html              # Vite entry HTML
-│   ├── package.json            # Frontend dependencies
-│   ├── tailwind.config.js      # Tailwind configuration
-│   └── vite.config.js          # Vite config & API reverse proxy
-├── package.json                # Root automation scripts
-├── render.yaml                 # Render Blueprint for 1-click deployment
-└── README.md                   # Documentation & deployment guide
+│   └── src/
+│       ├── pages/
+│       │   ├── Login.jsx
+│       │   ├── Register.jsx
+│       │   ├── ForgotPassword.jsx
+│       │   ├── Profile.jsx
+│       │   ├── patient/
+│       │   │   ├── Dashboard.jsx
+│       │   │   ├── SearchDoctors.jsx
+│       │   │   └── MedicalRecords.jsx
+│       │   ├── doctor/
+│       │   │   ├── Dashboard.jsx
+│       │   │   ├── ManageSchedule.jsx
+│       │   │   ├── ConsultationRoom.jsx
+│       │   │   └── PrescriptionForm.jsx
+│       │   └── admin/
+│       │       ├── Dashboard.jsx
+│       │       ├── UserManagement.jsx
+│       │       ├── Reports.jsx
+│       │       └── AuditLogs.jsx
+│       ├── components/
+│       │   ├── Navbar.jsx
+│       │   ├── Layout.jsx
+│       │   ├── AlertBanner.jsx
+│       │   └── StatusBadge.jsx
+│       ├── contexts/
+│       │   ├── AuthContext.jsx
+│       │   └── LanguageContext.jsx
+│       ├── services/api.js
+│       ├── translations/
+│       │   ├── en.js
+│       │   └── hi.js
+│       └── App.jsx
+│
+├── render.yaml               # Render deployment config
+├── package.json              # Root scripts
+└── README.md
 ```
 
 ---
 
-## 💻 Local Development Setup
+## 🔐 API Endpoints
 
-### 1. Prerequisites
-- **Node.js**: v18+ (Node.js LTS 24 installed)
-- **MongoDB**: Local MongoDB Server running OR a free MongoDB Atlas connection string.
-
-### 2. Quick Start (Run Both Frontend & Backend)
-
-Open **Terminal 1** (Backend):
-```powershell
-cd backend
-npm install
-npm start
-```
-*Backend runs on `http://localhost:5000`.*
-
-Open **Terminal 2** (Frontend Dev Server):
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-*Frontend runs on `http://localhost:5173` with instant hot reloading.*
-
----
-
-### 3. Unified Mode (Run Full-Stack from a Single Port)
-
-You can also run both the frontend and backend together on `http://localhost:5000`:
-
-```powershell
-# In the root directory:
-npm run build
-npm start
-```
-Visit `http://localhost:5000` in your browser.
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/auth/register` | Public | Create account |
+| POST | `/api/auth/login` | Public | Get JWT token |
+| POST | `/api/auth/forgot-password` | Public | Request reset token |
+| POST | `/api/auth/reset-password` | Public | Reset with token |
+| GET | `/api/auth/me` | JWT | Get current user |
+| GET | `/api/doctors` | JWT | List/search doctors |
+| GET | `/api/doctors/:id/availability` | JWT | Get available slots |
+| POST | `/api/appointments` | Patient | Book appointment |
+| GET | `/api/appointments` | JWT | My appointments |
+| PATCH | `/api/appointments/:id/status` | Doctor/Admin | Confirm/cancel |
+| POST | `/api/consultation/start` | Doctor | Start session |
+| POST | `/api/consultation/:id/end` | Doctor | End session |
+| POST | `/api/prescriptions` | Doctor | Create prescription |
+| POST | `/api/prescriptions/:id/send-to-pharmacy` | Doctor | Send to pharmacy |
+| GET | `/api/medical-records` | Patient | Own records |
+| GET | `/api/admin/users` | Admin | All users |
+| PATCH | `/api/admin/users/:id/status` | Admin | Activate/suspend |
+| GET | `/api/admin/reports` | Admin | Platform analytics |
+| GET | `/api/admin/audit-logs` | Admin | Audit trail |
+| GET | `/api/health` | Public | Health check |
 
 ---
 
-## ☁️ MongoDB Atlas Setup (Required for Render)
+## 🎨 UI Design
 
-Render does not host free databases locally, so using **MongoDB Atlas** (100% Free 512MB tier) is standard:
-
-1. Go to [https://www.mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas) and sign in/register.
-2. Click **Create a Deployment** → Choose **M0 (Free)**.
-3. Under **Security Quickstart**:
-   - Create a database user (e.g., username `admin` and a strong password).
-   - Under **Network Access**, select **Allow Access from Anywhere** (`0.0.0.0/0`).
-4. Click **Connect** → Choose **Drivers** (Node.js).
-5. Copy your connection string:
-   ```
-   mongodb+srv://admin:<password>@cluster0.xxxxx.mongodb.net/selab5?retryWrites=true&w=majority
-   ```
-6. Paste this URI into `backend/.env` (and into Render's Environment Variables during deployment).
+- **Theme**: Dark glassmorphic — `bg-slate-950` base with indigo/violet/teal gradients  
+- **Font**: Plus Jakarta Sans (Google Fonts)  
+- **Icons**: Lucide React  
+- **CSS**: Custom `glass-panel`, `glass-card`, `glass-input` utility classes  
+- **Responsive**: Mobile-first, works on all screen sizes  
 
 ---
 
-## 🚀 Deployment to Render
+## 👨‍💻 Author
 
-### Method 1: Render Blueprint (Recommended - 1-Click)
-
-1. Push your repository to GitHub:
-   ```bash
-   git add .
-   git commit -m "Complete SE Lab 5 with modern UI and deployment configs"
-   git push origin main
-   ```
-2. Log in to [Render Dashboard](https://dashboard.render.com/).
-3. Click **New +** → **Blueprint**.
-4. Connect your GitHub repository `se_lab_5`.
-5. Render will automatically detect `render.yaml`.
-6. Under environment variables, enter your `MONGO_URI` from MongoDB Atlas.
-7. Click **Apply**. Render will build and deploy your app with a public URL!
-
----
-
-### Method 2: Manual Web Service Setup
-
-If you prefer to configure manually on Render:
-
-1. Click **New +** → **Web Service**.
-2. Connect your repository.
-3. Configure settings:
-   - **Name**: `se-lab-5-portal`
-   - **Environment**: `Node`
-   - **Region**: Any (e.g. `Oregon (US West)` or `Frankfurt`)
-   - **Branch**: `main`
-   - **Root Directory**: *(leave blank)*
-   - **Build Command**: `npm run build`
-   - **Start Command**: `npm start`
-4. Add **Environment Variables**:
-   | Key | Value |
-   |---|---|
-   | `NODE_ENV` | `production` |
-   | `PORT` | `10000` |
-   | `JWT_SECRET` | *(Any long random string)* |
-   | `MONGO_URI` | `mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/selab5?retryWrites=true&w=majority` |
-5. Click **Deploy Web Service**.
-6. Once deployed, open the Render URL (`https://se-lab-5-portal.onrender.com`).
-
----
-
-## 📡 REST API Reference
-
-| Method | Endpoint | Access | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | Public | Register new user (`username`, `email`, `password`, `role`) |
-| `POST` | `/api/auth/login` | Public | Authenticate user & receive JWT token |
-| `POST` | `/api/auth/forgot-password` | Public | Request 1-hour password reset token |
-| `POST` | `/api/auth/reset-password` | Public | Reset password with token (`token`, `newPassword`) |
-| `GET` | `/api/auth/me` | Authenticated | Retrieve current session user info |
-| `GET` | `/api/user/dashboard` | Authenticated | Fetch personalized dashboard & stats |
-| `PUT` | `/api/user/profile/edit` | Authenticated | Update username & email |
-| `PUT` | `/api/user/change-password` | Authenticated | Update password while logged in |
-| `GET` | `/api/user/admin/users` | Admin Only | List all registered users |
-| `PATCH`| `/api/user/admin/users/:id/role` | Admin Only | Promote or demote user role |
-| `DELETE`| `/api/user/admin/users/:id` | Admin Only | Delete user account |
-| `GET` | `/api/health` | Public | System status and database probe |
-
----
-
-## 🧪 Quick Test Demo Credentials
-
-You can register any new user with the `user` or `admin` role, or use the one-click demo fillers on the Login page:
-
-- **Admin Account**:
-  - Email: `admin@example.com`
-  - Password: `admin123`
-- **User Account**:
-  - Email: `user@example.com`
-  - Password: `user123`
+**Ayush Gupta** — SE Lab 5

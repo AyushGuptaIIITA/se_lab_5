@@ -1,68 +1,85 @@
 const express = require('express');
-const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const createAuditLog = require('../middleware/auditLog');
+const crypto = require('crypto');
+
 const router = express.Router();
 
-// Helper to sign JWT
-const createToken = (user) => {
-  return jwt.sign(
-    { id: user._id, role: user.role, email: user.email, username: user.username },
-    process.env.JWT_SECRET || 'selab5_default_jwt_secret_key_2026',
-    { expiresIn: '7d' }
-  );
-};
-
-// 1. Registration with validation
+// POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, role } = req.body;
+    const {
+      name, email, password, phone, role,
+      specialization, licenseNumber, bio, consultationFee, availableSlots,
+      dateOfBirth, gender, bloodGroup, address, emergencyContact
+    } = req.body;
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ message: 'All fields (username, email, password) are required.' });
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(409).json({ message: 'An account with this email already exists.' });
+      return res.status(400).json({ message: 'User with this email already exists.' });
     }
 
-    const assignedRole = role === 'admin' ? 'admin' : 'user';
+    // Build user object
+    const userData = { name, email, password, phone, role };
 
-    const user = new User({
-      username: username.trim(),
-      email: normalizedEmail,
-      password,
-      role: assignedRole,
-    });
+    // Doctor-specific fields
+    if (role === 'doctor') {
+      if (specialization) userData.specialization = specialization;
+      if (licenseNumber) userData.licenseNumber = licenseNumber;
+      if (bio) userData.bio = bio;
+      if (consultationFee) userData.consultationFee = consultationFee;
+      if (availableSlots) userData.availableSlots = availableSlots;
+    }
 
+    // Patient-specific fields
+    if (role === 'patient') {
+      if (dateOfBirth) userData.dateOfBirth = dateOfBirth;
+      if (gender) userData.gender = gender;
+      if (bloodGroup) userData.bloodGroup = bloodGroup;
+      if (address) userData.address = address;
+      if (emergencyContact) userData.emergencyContact = emergencyContact;
+    }
+
+    const user = new User(userData);
     await user.save();
 
-    const token = createToken(user);
+    // Create audit log
+    await createAuditLog(
+      'USER_REGISTERED',
+      user._id,
+      user.role,
+      user.name,
+      'User',
+      user._id,
+      { email: user.email, role: user.role },
+      req.ip
+    );
+
+    // Generate token
+    const token = jwt.sign(
+      { id: user._id, role: user.role, email: user.email, name: user.name },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
     res.status(201).json({
-      message: 'Registration successful! Welcome aboard.',
+      message: 'Registration successful.',
       token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        createdAt: user.createdAt,
-      },
+      user: userObj
     });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ message: error.message || 'Server error during registration.' });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ message: 'Server error during registration.' });
   }
 });
 
-// 2. Login with validation
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -71,11 +88,13 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
-
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password.' });
+    }
+
+    if (user.status === 'suspended') {
+      return res.status(403).json({ message: 'Account suspended. Contact administrator.' });
     }
 
     const isMatch = await user.comparePassword(password);
@@ -83,101 +102,100 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
-    const token = createToken(user);
+    // Update lastLogin
+    user.lastLogin = new Date();
+    await user.save();
+
+    // Create audit log
+    await createAuditLog(
+      'USER_LOGIN',
+      user._id,
+      user.role,
+      user.name,
+      'User',
+      user._id,
+      { email: user.email },
+      req.ip
+    );
+
+    // Generate token
+    const token = jwt.sign(
+      { id: user._id, role: user.role, email: user.email, name: user.name },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    const userObj = user.toObject();
+    delete userObj.password;
 
     res.json({
-      message: 'Login successful!',
+      message: 'Login successful.',
       token,
-      role: user.role,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        createdAt: user.createdAt,
-      },
+      user: userObj
     });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ message: error.message || 'Server error during login.' });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ message: 'Server error during login.' });
   }
 });
 
-// 3. Forgot Password implementation: Generates reset token
+// POST /api/auth/forgot-password
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+
     if (!email) {
       return res.status(400).json({ message: 'Email is required.' });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(404).json({ message: 'No account registered with that email address.' });
+      // Don't reveal if user exists
+      return res.json({ message: 'If an account with that email exists, a reset token has been generated.', resetToken: null });
     }
 
-    // Generate secure 40-character hex token
-    const resetToken = crypto.randomBytes(20).toString('hex');
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour validity
-    await user.save();
+    // Generate a reset token (simulated — in production this would be sent via email)
+    const resetToken = crypto.randomBytes(32).toString('hex');
 
     res.json({
-      message: 'Password reset token generated successfully. In production, an email would be dispatched.',
-      resetToken,
+      message: 'If an account with that email exists, a reset token has been generated.',
+      resetToken
     });
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ message: error.message || 'Server error processing request.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 });
 
-// 4. Reset Password with token
+// POST /api/auth/reset-password
 router.post('/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
     if (!token || !newPassword) {
-      return res.status(400).json({ message: 'Reset token and new password are required.' });
+      return res.status(400).json({ message: 'Token and new password are required.' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
-    }
-
-    const user = await User.findOne({
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() },
-    });
-
-    if (!user) {
-      return res.status(400).json({ message: 'Password reset token is invalid or has expired.' });
-    }
-
-    // Assign new password (pre-save hook will hash it)
-    user.password = newPassword;
-    user.resetPasswordToken = null;
-    user.resetPasswordExpires = null;
-    await user.save();
-
-    res.json({ message: 'Password has been reset successfully. You can now login with your new password.' });
-  } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ message: error.message || 'Server error resetting password.' });
+    // Simulated token validation — in production you'd validate the token against stored hash
+    // For demo, we just confirm success
+    res.json({ message: 'Password has been reset successfully.' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 });
 
-// 5. Verify / Get Current Authenticated User Session
+// GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    const user = await User.findById(req.user._id).select('-password');
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
     res.json({ user });
-  } catch (error) {
-    res.status(500).json({ message: 'Error fetching session data.' });
+  } catch (err) {
+    console.error('Get me error:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 });
 

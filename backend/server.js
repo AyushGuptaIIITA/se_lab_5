@@ -1,75 +1,67 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
-
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/user');
 
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: '*', // Allow connections from Render / local frontend
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Database Connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/selab5';
-mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log(' MongoDB connected successfully!'))
-  .catch((err) => {
-    console.error(' MongoDB connection failed:', err.message);
-    console.log(' Note: Make sure MongoDB is running locally or set MONGO_URI in .env');
-  });
+// API Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/doctors', require('./routes/doctors'));
+app.use('/api/appointments', require('./routes/appointments'));
+app.use('/api/consultation', require('./routes/consultation'));
+app.use('/api/prescriptions', require('./routes/prescriptions'));
+app.use('/api/medical-records', require('./routes/medicalRecords'));
+app.use('/api/admin', require('./routes/admin'));
 
-// Health check endpoint (vital for Render zero-downtime health probes)
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'OK',
+    status: 'ok',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-
-// Serve Frontend in Production if built
-const frontendDist = path.join(__dirname, '../frontend/dist');
-const frontendBuild = path.join(__dirname, '../frontend/build');
-
-const fs = require('fs');
-if (fs.existsSync(frontendDist)) {
+// Serve frontend static files in production
+if (process.env.NODE_ENV === 'production') {
+  const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
   app.use(express.static(frontendDist));
   app.get('*', (req, res) => {
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
-} else if (fs.existsSync(frontendBuild)) {
-  app.use(express.static(frontendBuild));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(frontendBuild, 'index.html'));
-  });
-} else {
-  app.get('/', (req, res) => {
-    res.send('<h3>SE Lab 5 Backend API is running! Access frontend via client port (5173 / 3000) or build frontend for unified serving.</h3>');
-  });
 }
 
-// Error handling middleware
+// Global error handler
 app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err);
-  res.status(500).json({ message: 'Internal Server Error', error: err.message });
+  console.error('Unhandled error:', err);
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal server error.'
+  });
 });
 
+// MongoDB connection and server start
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(` Server active on port ${PORT}`);
-  console.log(` Health check available at: http://localhost:${PORT}/api/health`);
-});
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/telemedicine';
+
+mongoose.connect(MONGO_URI)
+  .then(() => {
+    console.log('✅ MongoDB connected successfully');
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+    });
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+  });
+
+module.exports = app;
