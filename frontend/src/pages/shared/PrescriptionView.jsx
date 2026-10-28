@@ -3,11 +3,15 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   FileText, Printer, ArrowLeft, ShieldCheck, CheckCircle, 
   Pill, Clock, Calendar, User, Phone, MapPin, Send, Loader2, 
-  Download, Stethoscope, AlertCircle, Share2
+  Download, Stethoscope, AlertCircle, Share2, BookOpen, RefreshCw,
+  Package, Truck, Check, ChevronRight, X
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
+import QRCodeBadge from '../../components/QRCodeBadge';
+import DailyPillSchedule from '../../components/DailyPillSchedule';
+import DrugInfoModal from '../../components/DrugInfoModal';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -21,35 +25,42 @@ export default function PrescriptionView() {
   const [prescription, setPrescription] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sendingPharmacy, setSendingPharmacy] = useState(false);
+  const [updatingRefill, setUpdatingRefill] = useState(false);
   const [alert, setAlert] = useState(null);
+  const [selectedDrugInfo, setSelectedDrugInfo] = useState(null);
+  const [showRefillModal, setShowRefillModal] = useState(false);
+  const [refillNotes, setRefillNotes] = useState('');
+  const [advancingTracking, setAdvancingTracking] = useState(false);
 
   const isDoctor = user?.role === 'doctor';
+  const isPatient = user?.role === 'patient';
+  const isAdmin = user?.role === 'admin';
+
+  const fetchPrescription = async () => {
+    setLoading(true);
+    try {
+      let res;
+      if (prescriptionId) {
+        res = await api.get(`/prescriptions/${prescriptionId}`);
+      } else if (appointmentId) {
+        res = await api.get(`/prescriptions/appointment/${appointmentId}`);
+      }
+      if (res?.data?.prescription) {
+        setPrescription(res.data.prescription);
+      } else {
+        setAlert({ type: 'error', message: 'Prescription record not found.' });
+      }
+    } catch (err) {
+      setAlert({ 
+        type: 'error', 
+        message: err.response?.data?.message || 'Failed to load e-prescription details.' 
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchPrescription = async () => {
-      setLoading(true);
-      try {
-        let res;
-        if (prescriptionId) {
-          res = await api.get(`/prescriptions/${prescriptionId}`);
-        } else if (appointmentId) {
-          res = await api.get(`/prescriptions/appointment/${appointmentId}`);
-        }
-        if (res?.data?.prescription) {
-          setPrescription(res.data.prescription);
-        } else {
-          setAlert({ type: 'error', message: 'Prescription record not found.' });
-        }
-      } catch (err) {
-        setAlert({ 
-          type: 'error', 
-          message: err.response?.data?.message || 'Failed to load e-prescription details.' 
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchPrescription();
   }, [prescriptionId, appointmentId]);
 
@@ -63,15 +74,65 @@ export default function PrescriptionView() {
     setAlert(null);
     try {
       const res = await api.post(`/prescriptions/${prescription._id}/send-to-pharmacy`);
-      setPrescription(prev => ({
-        ...prev,
-        pharmacyStatus: res.data.prescription?.pharmacyStatus || 'sent'
-      }));
-      setAlert({ type: 'success', message: 'Prescription successfully dispatched to partner pharmacy network!' });
+      setPrescription(res.data.prescription);
+      setAlert({ type: 'success', message: 'Prescription successfully dispatched to partner pharmacy network (FR-8)!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to dispatch to pharmacy.' });
     } finally {
       setSendingPharmacy(false);
+    }
+  };
+
+  const handleAdvanceTracking = async (nextStatus, label) => {
+    if (!prescription) return;
+    setAdvancingTracking(true);
+    try {
+      const res = await api.patch(`/prescriptions/${prescription._id}/tracking`, {
+        status: nextStatus,
+        label,
+        notes: `Milestone updated by ${user?.name || 'Authorized Staff'}`
+      });
+      setPrescription(res.data.prescription);
+      setAlert({ type: 'success', message: `Pharmacy fulfillment milestone updated: ${label}` });
+    } catch (err) {
+      setAlert({ type: 'error', message: 'Failed to update tracking milestone.' });
+    } finally {
+      setAdvancingTracking(false);
+    }
+  };
+
+  const handleRequestRefill = async (e) => {
+    e.preventDefault();
+    if (!prescription) return;
+    setUpdatingRefill(true);
+    try {
+      const res = await api.post(`/prescriptions/${prescription._id}/refill-request`, {
+        notes: refillNotes
+      });
+      setPrescription(res.data.prescription);
+      setShowRefillModal(false);
+      setAlert({ type: 'success', message: 'Prescription refill request sent to consulting doctor!' });
+    } catch (err) {
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to submit refill request.' });
+    } finally {
+      setUpdatingRefill(false);
+    }
+  };
+
+  const handleDoctorRefillAction = async (status) => {
+    if (!prescription) return;
+    setUpdatingRefill(true);
+    try {
+      const res = await api.patch(`/prescriptions/${prescription._id}/refill-status`, {
+        status,
+        doctorNotes: `Doctor marked refill as ${status}`
+      });
+      setPrescription(res.data.prescription);
+      setAlert({ type: 'success', message: `Prescription refill has been ${status}.` });
+    } catch (err) {
+      setAlert({ type: 'error', message: 'Failed to update refill status.' });
+    } finally {
+      setUpdatingRefill(false);
     }
   };
 
@@ -116,9 +177,76 @@ export default function PrescriptionView() {
 
   const docDisplayName = doctor.name?.startsWith('Dr.') ? doctor.name : `Dr. ${doctor.name || 'Practitioner'}`;
 
+  // 5-Stage Pharmacy Pipeline Data
+  const fulfillmentStages = [
+    { key: 'pending', label: 'Digitally Certified', desc: 'SHA-256 Doctor Signature verified' },
+    { key: 'sent', label: 'Dispatched to Pharmacy', desc: 'Transmitted to Apollo / 1mg' },
+    { key: 'received', label: 'Pharmacist Packaged', desc: 'Verified and packed for dispensation' },
+    { key: 'dispensed', label: 'Dispensed / Delivered', desc: 'Delivered to patient' }
+  ];
+
+  const currentStageIndex = 
+    prescription.pharmacyStatus === 'dispensed' ? 3 :
+    prescription.pharmacyStatus === 'received' ? 2 :
+    prescription.pharmacyStatus === 'sent' ? 1 : 0;
+
   return (
     <Layout>
       <div className="space-y-6 max-w-4xl mx-auto">
+        {/* Drug Factsheet Modal */}
+        {selectedDrugInfo && (
+          <DrugInfoModal drug={selectedDrugInfo} onClose={() => setSelectedDrugInfo(null)} />
+        )}
+
+        {/* Refill Request Modal */}
+        {showRefillModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center space-x-2">
+                  <RefreshCw className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-base font-bold text-slate-900">Request Prescription Refill</h3>
+                </div>
+                <button onClick={() => setShowRefillModal(false)} className="text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-600">
+                Submit a renewal request to <strong>{docDisplayName}</strong> for this ongoing course of medication.
+              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Reason / Notes for Doctor (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={refillNotes}
+                  onChange={e => setRefillNotes(e.target.value)}
+                  placeholder="e.g. Continuing maintenance for hypertension, remaining pills low..."
+                  className="glass-input w-full p-3 rounded-2xl text-xs bg-white resize-none"
+                />
+              </div>
+              <div className="flex items-center justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRefillModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestRefill}
+                  disabled={updatingRefill}
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm disabled:opacity-50"
+                >
+                  {updatingRefill ? 'Submitting...' : 'Send Refill Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Navigation & Action Bar (Hidden during printing) */}
         <div className="print:hidden flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
           <div>
@@ -137,7 +265,30 @@ export default function PrescriptionView() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Patient Refill Request Button */}
+            {isPatient && (
+              prescription.refillStatus === 'requested' ? (
+                <span className="px-3 py-2 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center space-x-1">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Refill Requested (Under Review)</span>
+                </span>
+              ) : prescription.refillStatus === 'approved' ? (
+                <span className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Refill Approved by Doctor</span>
+                </span>
+              ) : (
+                <button
+                  onClick={() => setShowRefillModal(true)}
+                  className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Request Refill / Renewal</span>
+                </button>
+              )
+            )}
+
             <button
               onClick={handlePrint}
               className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-all active:scale-95"
@@ -170,6 +321,117 @@ export default function PrescriptionView() {
         </div>
 
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
+
+        {/* Doctor Refill Request Review Banner (if requested) */}
+        {isDoctor && prescription.refillStatus === 'requested' && (
+          <div className="p-4 rounded-2xl bg-amber-50 border-2 border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+            <div className="space-y-0.5">
+              <span className="text-xs font-extrabold text-amber-900 flex items-center space-x-1.5 uppercase tracking-wider">
+                <RefreshCw className="w-4 h-4 text-amber-600 animate-spin" />
+                <span>Patient Requested Medication Refill</span>
+              </span>
+              <p className="text-xs text-amber-800">
+                Notes: {prescription.refillNotes || 'Patient is requesting renewal for continuous chronic medication management.'}
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => handleDoctorRefillAction('approved')}
+                disabled={updatingRefill}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs"
+              >
+                Approve Refill
+              </button>
+              <button
+                onClick={() => handleDoctorRefillAction('declined')}
+                disabled={updatingRefill}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300"
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ─── INTEGRATED PHARMACY FULFILLMENT PIPELINE (SRS FR-8) ──────────── */}
+        <div className="print:hidden glass-panel p-5 sm:p-6 rounded-3xl bg-white shadow-card space-y-4 border border-blue-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                <Package className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Integrated Pharmacy Order Tracking (SRS FR-8)</h3>
+                <p className="text-[11px] text-slate-500">Live fulfillment status with Apollo & Tata 1mg Partner Network</p>
+              </div>
+            </div>
+            <StatusBadge status={prescription.pharmacyStatus} />
+          </div>
+
+          {/* Stepper Progress Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+            {fulfillmentStages.map((stage, sIdx) => {
+              const isDone = sIdx <= currentStageIndex;
+              const isCurrent = sIdx === currentStageIndex;
+              return (
+                <div
+                  key={stage.key}
+                  className={`p-3 rounded-2xl border text-xs space-y-1 transition-all ${
+                    isCurrent
+                      ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
+                      : isDone
+                      ? 'bg-emerald-50/60 border-emerald-200 text-slate-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider">Stage {sIdx + 1}</span>
+                    {isDone ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-slate-300" />
+                    )}
+                  </div>
+                  <p className="font-extrabold text-xs">{stage.label}</p>
+                  <p className="text-[10px] leading-tight opacity-80">{stage.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick milestone advancement for demo / pharmacist */}
+          {(isDoctor || isAdmin) && currentStageIndex < 3 && (
+            <div className="pt-2 flex items-center justify-end space-x-2">
+              {currentStageIndex === 0 && (
+                <button
+                  onClick={handleSendToPharmacy}
+                  disabled={sendingPharmacy}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700"
+                >
+                  Dispatch to Pharmacy (Stage 2)
+                </button>
+              )}
+              {currentStageIndex === 1 && (
+                <button
+                  onClick={() => handleAdvanceTracking('received', 'Pharmacist Packaged')}
+                  disabled={advancingTracking}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300"
+                >
+                  Mark Packaged by Pharmacist (Stage 3)
+                </button>
+              )}
+              {currentStageIndex === 2 && (
+                <button
+                  onClick={() => handleAdvanceTracking('dispensed', 'Dispensed & Delivered to Patient')}
+                  disabled={advancingTracking}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700"
+                >
+                  Confirm Dispensed / Delivered (Stage 4)
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* ─── PRINTABLE OFFICIAL PRESCRIPTION SHEET ───────────────────────── */}
         <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-card print:border-none print:shadow-none print:p-0 space-y-6">
@@ -273,6 +535,7 @@ export default function PrescriptionView() {
                     <th className="py-3 px-4">Frequency</th>
                     <th className="py-3 px-4">Duration</th>
                     <th className="py-3 px-4">Instructions</th>
+                    <th className="py-3 px-4 print:hidden text-right">Details</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -291,11 +554,26 @@ export default function PrescriptionView() {
                       </td>
                       <td className="py-3 px-4 font-semibold text-slate-700">{med.duration}</td>
                       <td className="py-3 px-4 text-slate-600">{med.instructions || '—'}</td>
+                      <td className="py-3 px-4 print:hidden text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDrugInfo({ name: med.name, defaultDosage: med.dosage, defaultInstructions: med.instructions })}
+                          className="text-[11px] font-bold text-blue-600 hover:underline flex items-center justify-end space-x-1"
+                        >
+                          <BookOpen className="w-3 h-3" />
+                          <span>Facts</span>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Visual Daily Pill Schedule (Rural Comprehension) */}
+          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200">
+            <DailyPillSchedule medications={prescription.medications} />
           </div>
 
           {/* Advice & Lifestyle Precautions */}
@@ -310,12 +588,12 @@ export default function PrescriptionView() {
             </div>
           )}
 
-          {/* Digital Signature & Verification Seal (SRS FR-7) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-200">
+          {/* Digital Signature & Verification Seal with Scannable QR Code */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-slate-200 items-center">
             {/* Pharmacy Status Seal */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-700 uppercase tracking-wider text-[11px]">Partner Pharmacy Routing</span>
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[11px]">Pharmacy Network</span>
                 <StatusBadge status={prescription.pharmacyStatus} />
               </div>
               <p className="text-[11px] text-slate-500">
@@ -327,7 +605,7 @@ export default function PrescriptionView() {
             <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 text-xs space-y-1.5">
               <div className="flex items-center space-x-1.5 text-blue-700 font-bold uppercase tracking-wider text-[11px]">
                 <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Verified SHA-256 Digital Signature</span>
+                <span>Verified SHA-256 Signature</span>
               </div>
               <p className="text-slate-800">
                 Digitally signed by: <strong>{docDisplayName}</strong>
@@ -335,11 +613,20 @@ export default function PrescriptionView() {
               <p className="text-[11px] text-slate-500">
                 Timestamp: {sig.signedAt ? new Date(sig.signedAt).toLocaleString('en-IN') : '—'}
               </p>
-              <div className="pt-1">
+              <div className="pt-0.5">
                 <p className="text-[10px] text-slate-400 font-mono truncate">
                   Hash: {sig.signatureHash || 'AUTHENTICATED-SHA256'}
                 </p>
               </div>
+            </div>
+
+            {/* Scannable Verification QR Code */}
+            <div className="flex justify-center md:justify-end">
+              <QRCodeBadge
+                value={`https://telemed.health/prescription/${prescription._id}?cert=${sig.certificateId}`}
+                size={100}
+                label="SCAN TO VERIFY"
+              />
             </div>
           </div>
 

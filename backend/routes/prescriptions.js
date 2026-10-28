@@ -6,8 +6,124 @@ const User = require('../models/User');
 const { auth, doctorOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 const { sendToPharmacy } = require('../utils/pharmacyAdapter');
+const { CLINICAL_DRUGS, DRUG_INTERACTIONS, CLINICAL_TEMPLATES } = require('../utils/drugData');
 
 const router = express.Router();
+
+// GET /api/prescriptions/drugs/search — Search clinical drug database with OpenFDA fallback
+router.get('/drugs/search', auth, async (req, res) => {
+  try {
+    const query = (req.query.q || '').trim().toLowerCase();
+    if (!query) {
+      return res.json({ drugs: CLINICAL_DRUGS.slice(0, 15) });
+    }
+
+    // Filter local clinical database first
+    const localMatches = CLINICAL_DRUGS.filter(d => 
+      d.name.toLowerCase().includes(query) ||
+      d.genericName.toLowerCase().includes(query) ||
+      d.category.toLowerCase().includes(query) ||
+      d.brandNames.some(b => b.toLowerCase().includes(query))
+    );
+
+    // If query has 3+ chars and fewer than 5 local matches, try OpenFDA API with safe timeout
+    let fdaMatches = [];
+    if (query.length >= 3 && localMatches.length < 5) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const fdaUrl = `https://api.fda.gov/drug/label.json?search=openfda.brand_name:${encodeURIComponent(query)}*+OR+openfda.generic_name:${encodeURIComponent(query)}*&limit=4`;
+        const fdaRes = await fetch(fdaUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (fdaRes.ok) {
+          const fdaData = await fdaRes.json();
+          if (fdaData.results && Array.isArray(fdaData.results)) {
+            fdaMatches = fdaData.results.map(r => {
+              const brand = r.openfda?.brand_name?.[0] || 'Unknown';
+              const generic = r.openfda?.generic_name?.[0] || brand;
+              const purpose = r.purpose?.[0] || r.indications_and_usage?.[0] || 'Clinical Medication';
+              return {
+                name: brand,
+                brandNames: [brand],
+                genericName: generic,
+                category: 'FDA Verified Compound',
+                form: 'Tablet',
+                availableStrengths: ['Standard dosage'],
+                defaultDosage: 'As directed',
+                defaultFrequency: 'Once daily',
+                defaultDuration: '5 days',
+                defaultInstructions: 'Take as directed by doctor.',
+                timing: { morning: true, afternoon: false, night: false, withFood: 'With water' },
+                indications: purpose.slice(0, 200),
+                warnings: (r.warnings?.[0] || 'Use as directed.').slice(0, 200)
+              };
+            });
+          }
+        }
+      } catch (fdaErr) {
+        // Safe fallback - ignore FDA timeout or offline error
+      }
+    }
+
+    // Combine local and FDA matches, removing duplicates by name
+    const combined = [...localMatches];
+    fdaMatches.forEach(fdaDrug => {
+      if (!combined.some(c => c.name.toLowerCase() === fdaDrug.name.toLowerCase())) {
+        combined.push(fdaDrug);
+      }
+    });
+
+    res.json({ drugs: combined.slice(0, 20) });
+  } catch (err) {
+    console.error('Drug search error:', err);
+    res.status(500).json({ message: 'Error searching medications.' });
+  }
+});
+
+// GET /api/prescriptions/templates — Get clinical regimen disease templates
+router.get('/templates', auth, (req, res) => {
+  res.json({ templates: CLINICAL_TEMPLATES });
+});
+
+// POST /api/prescriptions/check-interactions — Real-time Drug-Drug Interaction safety check
+router.post('/check-interactions', auth, (req, res) => {
+  try {
+    const { medications } = req.body;
+    if (!medications || !Array.isArray(medications) || medications.length < 2) {
+      return res.json({ interactions: [], safe: true });
+    }
+
+    // Extract names to lower case
+    const medNames = medications.map(m => {
+      if (typeof m === 'string') return m.toLowerCase();
+      return (m.name || '').toLowerCase();
+    }).filter(Boolean);
+
+    const detected = [];
+
+    DRUG_INTERACTIONS.forEach(rule => {
+      const drugA = rule.drugs[0].toLowerCase();
+      const drugB = rule.drugs[1].toLowerCase();
+
+      const hasA = medNames.some(name => name.includes(drugA) || drugA.includes(name));
+      const hasB = medNames.some(name => name.includes(drugB) || drugB.includes(name));
+
+      if (hasA && hasB) {
+        detected.push(rule);
+      }
+    });
+
+    res.json({
+      interactions: detected,
+      safe: detected.length === 0,
+      totalChecked: medNames.length
+    });
+  } catch (err) {
+    console.error('Interaction check error:', err);
+    res.status(500).json({ message: 'Error checking drug interactions.' });
+  }
+});
 
 // POST /api/prescriptions — Create a prescription (doctor only)
 router.post('/', auth, doctorOnly, async (req, res) => {
@@ -55,7 +171,15 @@ router.post('/', auth, doctorOnly, async (req, res) => {
         signatureHash,
         certificateId
       },
-      pharmacyStatus: 'pending'
+      pharmacyStatus: 'pending',
+      trackingSteps: [
+        {
+          status: 'pending',
+          label: 'Digitally Signed & Certified',
+          timestamp: signedAt,
+          notes: `Certified by Dr. ${req.user.name} (License ID Verified, Hash: ${signatureHash.substring(0, 16)}...)`
+        }
+      ]
     });
 
     await prescription.save();
@@ -94,7 +218,7 @@ router.post('/', auth, doctorOnly, async (req, res) => {
 // GET /api/prescriptions — List prescriptions based on role
 router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 100 } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
 
@@ -109,8 +233,8 @@ router.get('/', auth, async (req, res) => {
 
     const total = await Prescription.countDocuments(filter);
     const prescriptions = await Prescription.find(filter)
-      .populate('patient', 'name email phone')
-      .populate('doctor', 'name email specialization')
+      .populate('patient', 'name email phone gender dateOfBirth bloodGroup')
+      .populate('doctor', 'name email specialization licenseNumber')
       .populate('appointment', 'date timeSlot status type')
       .sort({ createdAt: -1 })
       .skip((pageNum - 1) * limitNum)
@@ -225,6 +349,17 @@ router.post('/:id/send-to-pharmacy', auth, doctorOnly, async (req, res) => {
     prescription.pharmacyStatus = 'sent';
     prescription.pharmacyResponse = pharmacyResponse;
     prescription.sentToPharmacyAt = new Date();
+
+    if (!prescription.trackingSteps) {
+      prescription.trackingSteps = [];
+    }
+    prescription.trackingSteps.push({
+      status: 'sent',
+      label: 'Transmitted to Digital Pharmacy Partner (Apollo / 1mg)',
+      timestamp: new Date(),
+      notes: `Order Ref: ${pharmacyResponse.pharmacyRefId || 'PHARM-DISPATCH'}`
+    });
+
     await prescription.save();
 
     // Create audit log
@@ -250,6 +385,123 @@ router.post('/:id/send-to-pharmacy', auth, doctorOnly, async (req, res) => {
   } catch (err) {
     console.error('Send to pharmacy error:', err);
     res.status(500).json({ message: 'Server error sending prescription to pharmacy.' });
+  }
+});
+
+// POST /api/prescriptions/:id/refill-request — Request refill/renewal (Patient)
+router.post('/:id/refill-request', auth, async (req, res) => {
+  try {
+    const { notes } = req.body;
+    const prescription = await Prescription.findById(req.params.id);
+
+    if (!prescription) {
+      return res.status(404).json({ message: 'Prescription not found.' });
+    }
+
+    if (prescription.patient.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the patient can request a refill for this prescription.' });
+    }
+
+    prescription.refillStatus = 'requested';
+    prescription.refillNotes = notes || 'Patient requested prescription refill for continued therapy.';
+    prescription.refillRequestedAt = new Date();
+    await prescription.save();
+
+    await createAuditLog(
+      'PRESCRIPTION_REFILL_REQUESTED',
+      req.user._id,
+      req.user.role,
+      req.user.name,
+      'Prescription',
+      prescription._id,
+      { notes: prescription.refillNotes },
+      req.ip
+    );
+
+    res.json({
+      message: 'Prescription refill requested successfully. Your doctor has been notified.',
+      prescription
+    });
+  } catch (err) {
+    console.error('Refill request error:', err);
+    res.status(500).json({ message: 'Server error requesting refill.' });
+  }
+});
+
+// PATCH /api/prescriptions/:id/refill-status — Approve or decline refill (Doctor)
+router.patch('/:id/refill-status', auth, doctorOnly, async (req, res) => {
+  try {
+    const { status, doctorNotes } = req.body;
+    if (!['approved', 'declined'].includes(status)) {
+      return res.status(400).json({ message: 'Status must be approved or declined.' });
+    }
+
+    const prescription = await Prescription.findById(req.params.id);
+    if (!prescription) {
+      return res.status(404).json({ message: 'Prescription not found.' });
+    }
+
+    if (prescription.doctor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the prescribing doctor can update refill status.' });
+    }
+
+    prescription.refillStatus = status;
+    if (doctorNotes) {
+      prescription.additionalNotes = (prescription.additionalNotes ? prescription.additionalNotes + '\n' : '') + `[Refill Note]: ${doctorNotes}`;
+    }
+    await prescription.save();
+
+    await createAuditLog(
+      'PRESCRIPTION_REFILL_STATUS_UPDATED',
+      req.user._id,
+      req.user.role,
+      req.user.name,
+      'Prescription',
+      prescription._id,
+      { status, doctorNotes },
+      req.ip
+    );
+
+    res.json({
+      message: `Prescription refill has been ${status}.`,
+      prescription
+    });
+  } catch (err) {
+    console.error('Refill status update error:', err);
+    res.status(500).json({ message: 'Server error updating refill status.' });
+  }
+});
+
+// PATCH /api/prescriptions/:id/tracking — Advance pharmacy tracking step (Doctor or Admin)
+router.patch('/:id/tracking', auth, async (req, res) => {
+  try {
+    const { status, label, notes } = req.body;
+    if (!status || !['pending', 'sent', 'received', 'dispensed', 'failed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid pharmacy tracking status.' });
+    }
+
+    const prescription = await Prescription.findById(req.params.id);
+    if (!prescription) {
+      return res.status(404).json({ message: 'Prescription not found.' });
+    }
+
+    prescription.pharmacyStatus = status;
+    if (!prescription.trackingSteps) prescription.trackingSteps = [];
+    prescription.trackingSteps.push({
+      status,
+      label: label || `Status updated to ${status}`,
+      timestamp: new Date(),
+      notes: notes || `Updated by ${req.user.name}`
+    });
+    await prescription.save();
+
+    res.json({
+      message: 'Pharmacy tracking updated.',
+      prescription
+    });
+  } catch (err) {
+    console.error('Update tracking error:', err);
+    res.status(500).json({ message: 'Server error updating tracking.' });
   }
 });
 

@@ -15,6 +15,13 @@ const digitalSignatureSchema = new mongoose.Schema({
   certificateId: { type: String }
 }, { _id: false });
 
+const trackingStepSchema = new mongoose.Schema({
+  status: { type: String, required: true },
+  label: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+  notes: { type: String }
+}, { _id: false });
+
 const prescriptionSchema = new mongoose.Schema({
   appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: true },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -29,7 +36,15 @@ const prescriptionSchema = new mongoose.Schema({
     default: 'pending'
   },
   pharmacyResponse: { type: mongoose.Schema.Types.Mixed },
-  sentToPharmacyAt: { type: Date }
+  sentToPharmacyAt: { type: Date },
+  trackingSteps: [trackingStepSchema],
+  refillStatus: {
+    type: String,
+    enum: ['none', 'requested', 'approved', 'declined'],
+    default: 'none'
+  },
+  refillNotes: { type: String },
+  refillRequestedAt: { type: Date }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Prescription', prescriptionSchema);
