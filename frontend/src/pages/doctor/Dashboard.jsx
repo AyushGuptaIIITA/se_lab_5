@@ -251,13 +251,21 @@ export default function DoctorDashboard() {
                         </>
                       )}
                       {apt.status === 'completed' && (
-                        <Link
-                          to={`/doctor/prescription/${apt._id}`}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>View / Edit e-Prescription</span>
-                        </Link>
+                        <div className="flex items-center space-x-1.5">
+                          <Link
+                            to={`/prescription/appointment/${apt._id}`}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-xs"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>View e-Rx</span>
+                          </Link>
+                          <Link
+                            to={`/doctor/prescription/${apt._id}`}
+                            className="px-2 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800"
+                          >
+                            Edit
+                          </Link>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -337,11 +345,12 @@ export default function DoctorDashboard() {
                       )}
                       {apt.status === 'completed' && (
                         <Link
-                          to={`/doctor/prescription/${apt._id}`}
-                          className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                          to={`/prescription/appointment/${apt._id}`}
+                          className="flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors shadow-xs"
+                          title="View official certified prescription"
                         >
                           <FileText className="w-3 h-3" />
-                          <span>e-Rx</span>
+                          <span>View e-Rx</span>
                         </Link>
                       )}
                     </div>

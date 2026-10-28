@@ -147,6 +147,34 @@ router.get('/patient/:patientId', auth, async (req, res) => {
   }
 });
 
+// GET /api/prescriptions/appointment/:appointmentId — Get prescription for an appointment
+router.get('/appointment/:appointmentId', auth, async (req, res) => {
+  try {
+    const prescription = await Prescription.findOne({ appointment: req.params.appointmentId })
+      .populate('patient', 'name email phone gender dateOfBirth bloodGroup address')
+      .populate('doctor', 'name email specialization licenseNumber')
+      .populate('appointment', 'date timeSlot status type symptoms notes');
+
+    if (!prescription) {
+      return res.status(404).json({ message: 'No prescription found for this appointment.' });
+    }
+
+    const userId = req.user._id.toString();
+    if (
+      req.user.role !== 'admin' &&
+      prescription.doctor._id.toString() !== userId &&
+      prescription.patient._id.toString() !== userId
+    ) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    res.json({ prescription });
+  } catch (err) {
+    console.error('Get prescription by appointment error:', err);
+    res.status(500).json({ message: 'Server error fetching prescription.' });
+  }
+});
+
 // GET /api/prescriptions/:id — Get single prescription
 router.get('/:id', auth, async (req, res) => {
   try {

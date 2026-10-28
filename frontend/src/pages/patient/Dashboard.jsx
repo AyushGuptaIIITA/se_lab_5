@@ -173,6 +173,15 @@ export default function PatientDashboard() {
                     <span>Join Video Call</span>
                   </Link>
                 )}
+                {next.status === 'completed' && (
+                  <Link
+                    to={`/prescription/appointment/${next._id}`}
+                    className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>View e-Prescription</span>
+                  </Link>
+                )}
                 <Link
                   to="/patient/medical-records"
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-blue-500 transition-all shadow-xs"
@@ -247,11 +256,11 @@ export default function PatientDashboard() {
                       )}
                       {apt.status === 'completed' && (
                         <Link
-                          to="/patient/medical-records"
-                          className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                          to={`/prescription/appointment/${apt._id}`}
+                          className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-xs"
                         >
                           <FileText className="w-3.5 h-3.5" />
-                          <span>Prescription</span>
+                          <span>e-Prescription</span>
                         </Link>
                       )}
                       <StatusBadge status={apt.status} />

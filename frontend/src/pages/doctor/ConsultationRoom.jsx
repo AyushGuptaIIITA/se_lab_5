@@ -361,21 +361,19 @@ export default function ConsultationRoom() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              {isDoctor ? (
+              <Link
+                to={`/prescription/appointment/${appointmentId}`}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-all flex items-center justify-center space-x-2"
+              >
+                <FileText className="w-4 h-4" />
+                <span>View Official e-Prescription</span>
+              </Link>
+              {isDoctor && (
                 <Link
                   to={`/doctor/prescription/${appointmentId}`}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-all flex items-center justify-center space-x-2"
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center space-x-1"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>View / Edit e-Prescription</span>
-                </Link>
-              ) : (
-                <Link
-                  to="/patient/medical-records"
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition-all flex items-center justify-center space-x-2"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>View Issued Prescription</span>
+                  <span>Edit Rx</span>
                 </Link>
               )}
               <Link

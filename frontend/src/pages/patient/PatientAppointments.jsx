@@ -244,11 +244,11 @@ export default function PatientAppointments() {
                       {apt.status === 'completed' && (
                         <>
                           <Link
-                            to="/patient/medical-records"
-                            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                            to={`/prescription/appointment/${apt._id}`}
+                            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-xs"
                           >
                             <FileText className="w-3.5 h-3.5" />
-                            <span>View e-Prescription</span>
+                            <span>View & Print e-Prescription</span>
                           </Link>
                           <span className="text-[11px] text-slate-400 italic">
                             (Consultation concluded — rejoining closed)

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { FileText, Pill, Calendar, Loader2, ChevronDown, ChevronUp, CheckCircle, ShieldCheck } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
@@ -83,9 +84,18 @@ function RecordCard({ record }) {
                   <p className="font-mono text-[10px] text-gray-500 truncate mt-0.5">Hash: {pres.digitalSignature.signatureHash}</p>
                 </div>
               )}
-              <div className="flex items-center space-x-2 text-xs pt-1">
-                <span className="text-gray-500">TeleMed Pharmacy Status:</span>
-                <StatusBadge status={pres.pharmacyStatus} />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-gray-200">
+                <div className="flex items-center space-x-2 text-xs">
+                  <span className="text-gray-500">TeleMed Pharmacy Status:</span>
+                  <StatusBadge status={pres.pharmacyStatus} />
+                </div>
+                <Link
+                  to={`/prescription/${pres._id}`}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition-colors self-start sm:self-auto"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>View Official e-Prescription</span>
+                </Link>
               </div>
             </div>
           ) : record.status === 'completed' ? (

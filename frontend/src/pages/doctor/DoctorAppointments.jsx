@@ -293,16 +293,36 @@ export default function DoctorAppointments() {
                       )}
                     </div>
 
-                    {/* Right side: e-Prescription Button (Allowed at ANY time!) */}
+                    {/* Right side: e-Prescription Buttons (View & Edit) */}
                     <div className="flex items-center space-x-2">
-                      <Link
-                        to={`/doctor/prescription/${apt._id}`}
-                        className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
-                        title="Write or edit digitally signed e-prescription directly without starting call"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>{apt.prescription ? 'View / Edit e-Prescription' : 'Write e-Prescription'}</span>
-                      </Link>
+                      {apt.prescription ? (
+                        <>
+                          <Link
+                            to={`/prescription/appointment/${apt._id}`}
+                            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors shadow-xs"
+                            title="View and print official certified e-prescription"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>View e-Prescription</span>
+                          </Link>
+                          <Link
+                            to={`/doctor/prescription/${apt._id}`}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors"
+                            title="Edit prescription medicines or instructions"
+                          >
+                            <span>Edit</span>
+                          </Link>
+                        </>
+                      ) : (
+                        <Link
+                          to={`/doctor/prescription/${apt._id}`}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+                          title="Write digitally signed e-prescription directly without starting call"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Write e-Prescription</span>
+                        </Link>
+                      )}
                     </div>
                   </div>
                 </div>

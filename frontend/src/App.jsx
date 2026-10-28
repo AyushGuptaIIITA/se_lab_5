@@ -29,6 +29,7 @@ import AuditLogs from './pages/admin/AuditLogs';
 
 // Shared
 import Profile from './pages/Profile';
+import PrescriptionView from './pages/shared/PrescriptionView';
 
 // ─── Loading Spinner ────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -110,6 +111,8 @@ function AppRoutes() {
 
         {/* ── Shared ── */}
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/prescription/:prescriptionId" element={<ProtectedRoute roles={['patient', 'doctor', 'admin']}><PrescriptionView /></ProtectedRoute>} />
+        <Route path="/prescription/appointment/:appointmentId" element={<ProtectedRoute roles={['patient', 'doctor', 'admin']}><PrescriptionView /></ProtectedRoute>} />
 
         {/* ── Catch-all ── */}
         <Route path="*" element={<Navigate to="/" replace />} />
