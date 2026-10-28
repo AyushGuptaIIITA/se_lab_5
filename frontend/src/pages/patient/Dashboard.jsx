@@ -192,9 +192,15 @@ export default function PatientDashboard() {
                 <Calendar className="w-4 h-4 text-blue-600" />
                 <span>Appointment History</span>
               </h2>
-              <Link to="/patient/search-doctors" className="text-xs font-bold text-blue-600 hover:underline">
-                Book New →
-              </Link>
+              <div className="flex items-center space-x-3 text-xs font-bold">
+                <Link to="/patient/appointments" className="text-blue-600 hover:underline">
+                  View All ({appointments.length}) →
+                </Link>
+                <span className="text-slate-300">·</span>
+                <Link to="/patient/search-doctors" className="text-slate-600 hover:text-blue-600">
+                  Book New
+                </Link>
+              </div>
             </div>
             {loading ? (
               <div className="py-12 flex items-center justify-center">

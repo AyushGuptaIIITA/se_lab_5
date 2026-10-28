@@ -1,19 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, Send, Loader2, CheckCircle, Shield, ArrowLeft, Pill, ShieldCheck } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { 
+  FileText, Plus, Trash2, Send, Loader2, CheckCircle, Shield, 
+  ArrowLeft, Pill, ShieldCheck, User, Calendar, Clock, AlertCircle
+} from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 
-const FREQUENCIES = ['Once daily', 'Twice daily', 'Thrice daily', 'Every 4 hours', 'Every 6 hours', 'Every 8 hours', 'At bedtime', 'As needed'];
+const FREQUENCIES = [
+  'Once daily', 'Twice daily', 'Thrice daily', 'Every 4 hours', 
+  'Every 6 hours', 'Every 8 hours', 'At bedtime', 'As needed'
+];
 const emptyMed = { name: '', dosage: '', frequency: 'Once daily', duration: '', instructions: '' };
 
 export default function PrescriptionForm() {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
   const { t } = useLanguage();
+
+  const [activeAptId, setActiveAptId] = useState(appointmentId && appointmentId !== 'new' ? appointmentId : '');
+  const [doctorAppointments, setDoctorAppointments] = useState([]);
   const [appointment, setAppointment] = useState(null);
   const [existingPrescription, setExistingPrescription] = useState(null);
   const [diagnosis, setDiagnosis] = useState('');
@@ -24,23 +33,54 @@ export default function PrescriptionForm() {
   const [sendingPharmacy, setSendingPharmacy] = useState(false);
   const [alert, setAlert] = useState(null);
 
+  // Load all doctor appointments for quick standalone selection
   useEffect(() => {
-    const fetch = async () => {
+    const fetchAppointmentsList = async () => {
+      try {
+        const res = await api.get('/appointments?limit=50');
+        const list = res.data.appointments || [];
+        setDoctorAppointments(list);
+        if (!activeAptId && list.length > 0) {
+          setActiveAptId(list[0]._id);
+        }
+      } catch (err) {
+        console.error('Failed to load appointments list:', err);
+      }
+    };
+    fetchAppointmentsList();
+  }, []);
+
+  // Load specific appointment & existing prescription
+  useEffect(() => {
+    if (!activeAptId || activeAptId === 'new') {
+      setLoading(false);
+      return;
+    }
+
+    const fetchAppt = async () => {
       setLoading(true);
       try {
-        const res = await api.get(`/appointments/${appointmentId}`);
-        setAppointment(res.data.appointment);
-        if (res.data.appointment.prescription) {
-          setExistingPrescription(res.data.appointment.prescription);
+        const res = await api.get(`/appointments/${activeAptId}`);
+        const appt = res.data.appointment;
+        setAppointment(appt);
+        if (appt.prescription) {
+          setExistingPrescription(appt.prescription);
+        } else {
+          setExistingPrescription(null);
+          // Pre-populate diagnosis or symptoms if provided
+          if (appt.symptoms) {
+            setAdditionalNotes(`Patient symptoms noted: ${appt.symptoms}`);
+          }
         }
       } catch {
-        setAlert({ type: 'error', message: 'Failed to load appointment.' });
+        setAlert({ type: 'error', message: 'Failed to load consultation details for this prescription.' });
       } finally {
         setLoading(false);
       }
     };
-    fetch();
-  }, [appointmentId]);
+
+    fetchAppt();
+  }, [activeAptId]);
 
   const addMed = () => setMedications(m => [...m, { ...emptyMed }]);
   const removeMed = (idx) => setMedications(m => m.filter((_, i) => i !== idx));
@@ -48,17 +88,30 @@ export default function PrescriptionForm() {
 
   const handleGenerate = async (e) => {
     e.preventDefault();
-    if (!diagnosis.trim()) { setAlert({ type: 'error', message: 'Diagnosis is required.' }); return; }
-    if (medications.some(m => !m.name || !m.dosage || !m.duration)) {
-      setAlert({ type: 'error', message: 'All medication fields are required.' });
+    if (!activeAptId) {
+      setAlert({ type: 'error', message: 'Please select a patient appointment to issue this prescription.' });
       return;
     }
+    if (!diagnosis.trim()) { 
+      setAlert({ type: 'error', message: 'Clinical diagnosis is required.' }); 
+      return; 
+    }
+    if (medications.some(m => !m.name.trim() || !m.dosage.trim() || !m.duration.trim())) {
+      setAlert({ type: 'error', message: 'All medication fields (Name, Dosage, Duration) are required.' });
+      return;
+    }
+
     setGenerating(true);
     setAlert(null);
     try {
-      const res = await api.post('/prescriptions', { appointmentId, diagnosis, medications, additionalNotes });
+      const res = await api.post('/prescriptions', { 
+        appointmentId: activeAptId, 
+        diagnosis, 
+        medications, 
+        additionalNotes 
+      });
       setExistingPrescription(res.data.prescription);
-      setAlert({ type: 'success', message: t('prescriptionSuccess') });
+      setAlert({ type: 'success', message: 'Digital e-Prescription generated & cryptographically signed (SHA-256)!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to generate prescription.' });
     } finally {
@@ -73,7 +126,7 @@ export default function PrescriptionForm() {
     try {
       const res = await api.post(`/prescriptions/${existingPrescription._id}/send-to-pharmacy`);
       setExistingPrescription(p => ({ ...p, pharmacyStatus: res.data.prescription?.pharmacyStatus || 'sent' }));
-      setAlert({ type: 'success', message: 'Prescription successfully dispatched to designated pharmacy!' });
+      setAlert({ type: 'success', message: 'Prescription successfully dispatched to designated partner pharmacy!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to send to pharmacy.' });
     } finally {
@@ -96,28 +149,71 @@ export default function PrescriptionForm() {
       <div className="space-y-6 max-w-4xl mx-auto">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+        {/* Header with Navigation */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
           <div>
-            <button
-              onClick={() => navigate('/doctor/dashboard')}
-              className="flex items-center space-x-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600 mb-1.5 transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Dashboard</span>
-            </button>
+            <div className="flex items-center space-x-3 mb-1.5">
+              <Link
+                to="/doctor/appointments"
+                className="flex items-center space-x-1 text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>All Consultations</span>
+              </Link>
+              <span className="text-slate-300">·</span>
+              <Link
+                to="/doctor/dashboard"
+                className="text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors"
+              >
+                Dashboard
+              </Link>
+            </div>
             <h1 className="text-2xl font-black text-slate-900 flex items-center space-x-2">
-              <span>Digital e-Prescription (FR-7 & FR-8)</span>
+              <span>Digital e-Prescription (SRS FR-7 & FR-8)</span>
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Patient: <strong className="text-slate-800">{appointment?.patient?.name}</strong> · Consultation Date: {appointment ? new Date(appointment.date).toLocaleDateString('en-IN') : ''}
+              Stand-alone certified e-Prescription generator — valid with or without an active video call
             </p>
           </div>
           <div className="text-right">
-            <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-xs">
               <ShieldCheck className="w-4 h-4 text-blue-600" />
               <span>SHA-256 Digitally Signed</span>
             </span>
           </div>
+        </div>
+
+        {/* Patient / Appointment Selector Dropdown */}
+        <div className="glass-panel p-4 rounded-2xl bg-white shadow-card space-y-2 border border-blue-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
+              <User className="w-4 h-4 text-blue-600" />
+              <span>Select Consultation / Patient Record</span>
+            </label>
+            {appointment && (
+              <span className="text-xs text-slate-500">
+                Status: <strong className="capitalize text-slate-800">{appointment.status}</strong> · {appointment.timeSlot?.start} – {appointment.timeSlot?.end}
+              </span>
+            )}
+          </div>
+          <select
+            value={activeAptId}
+            onChange={e => {
+              setActiveAptId(e.target.value);
+              navigate(`/doctor/prescription/${e.target.value}`, { replace: true });
+            }}
+            className="glass-input w-full p-2.5 rounded-xl text-xs bg-white font-semibold text-slate-800"
+          >
+            {doctorAppointments.length === 0 ? (
+              <option value="">No appointments found</option>
+            ) : (
+              doctorAppointments.map(apt => (
+                <option key={apt._id} value={apt._id}>
+                  {apt.patient?.name || 'Patient'} — {new Date(apt.date).toLocaleDateString('en-IN')} ({apt.timeSlot?.start} - {apt.timeSlot?.end}) [{apt.status.toUpperCase()}]
+                </option>
+              ))
+            )}
+          </select>
         </div>
 
         {/* Existing / Signed Prescription View */}
@@ -198,158 +294,157 @@ export default function PrescriptionForm() {
                   <button
                     onClick={handleSendPharmacy}
                     disabled={sendingPharmacy}
-                    className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50"
+                    className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all disabled:opacity-50"
                   >
                     {sendingPharmacy ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Sending to Pharmacy...</span>
+                        <span>Transmitting to Partner Pharmacy...</span>
                       </>
                     ) : (
                       <>
                         <Send className="w-3.5 h-3.5" />
-                        <span>Dispatch to Partner Pharmacy (FR-8)</span>
+                        <span>Send to Partner Pharmacy (FR-8)</span>
                       </>
                     )}
                   </button>
                 ) : (
-                  <span className="text-xs font-bold text-emerald-700 flex items-center space-x-1.5">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Prescription dispatched to pharmacy adapter for fulfillment</span>
+                  <span className="flex items-center space-x-1 text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Dispatched to Pharmacy</span>
                   </span>
                 )}
               </div>
             </div>
-
-            <button
-              onClick={() => navigate('/doctor/dashboard')}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-slate-300"
-            >
-              ← Return to Dashboard
-            </button>
           </div>
         ) : (
-          <form onSubmit={handleGenerate} className="space-y-5">
+          /* Generate Prescription Form */
+          <form onSubmit={handleGenerate} className="glass-panel p-6 sm:p-8 rounded-2xl bg-white shadow-card space-y-6">
+            <div className="flex items-center space-x-2 text-xs font-bold text-blue-700 bg-blue-50 p-3 rounded-xl border border-blue-200">
+              <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <span>Complies with MCI Telemedicine Practice Guidelines: Issues verified, SHA-256 digitally-signed prescriptions.</span>
+            </div>
+
             {/* Diagnosis */}
-            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-2">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{t('diagnosis')} *</label>
-              <textarea
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Clinical Diagnosis & Observations *
+              </label>
+              <input
+                type="text"
                 required
-                rows={2}
+                placeholder="e.g. Acute upper respiratory tract infection, Hypertension Stage 1..."
                 value={diagnosis}
                 onChange={e => setDiagnosis(e.target.value)}
-                placeholder="Enter clinical diagnosis (e.g. Acute Pharyngitis with Low Grade Fever)..."
-                className="glass-input w-full p-3 rounded-xl text-sm bg-white resize-none"
+                className="glass-input w-full px-4 py-2.5 rounded-xl text-sm font-medium"
               />
             </div>
 
             {/* Medications List */}
-            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">{t('medications')} *</label>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Prescribed Medications (Rx) *
+                </label>
                 <button
                   type="button"
                   onClick={addMed}
-                  className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition-colors"
+                  className="flex items-center space-x-1 text-xs font-bold text-blue-600 hover:text-blue-700"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>{t('addMedication')}</span>
+                  <span>Add Another Medication</span>
                 </button>
               </div>
 
               {medications.map((med, idx) => (
                 <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-700">Medication #{idx + 1}</span>
+                    <span className="text-xs font-bold text-slate-600">Medicine #{idx + 1}</span>
                     {medications.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeMed(idx)}
-                        className="p-1 rounded text-rose-500 hover:bg-rose-50"
+                        className="text-slate-400 hover:text-rose-500"
+                        title="Remove medicine"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('drugName')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Drug Name *</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. Paracetamol 650mg / Amoxicillin 500mg"
+                        placeholder="e.g. Paracetamol"
                         value={med.name}
                         onChange={e => updateMed(idx, 'name', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('dosage')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Dosage *</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. 1 Tablet"
+                        placeholder="e.g. 500 mg"
                         value={med.dosage}
                         onChange={e => updateMed(idx, 'dosage', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('frequency')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Frequency *</label>
                       <select
                         value={med.frequency}
                         onChange={e => updateMed(idx, 'frequency', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white font-medium"
                       >
                         {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('duration')} *</label>
+                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">Duration *</label>
                       <input
                         type="text"
                         required
                         placeholder="e.g. 5 days"
                         value={med.duration}
                         onChange={e => updateMed(idx, 'duration', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
+                        className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
                       />
                     </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">{t('instructions')}</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Take after meals with warm water"
-                        value={med.instructions}
-                        onChange={e => updateMed(idx, 'instructions', e.target.value)}
-                        className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
-                      />
-                    </div>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Special instructions (e.g. Take after meals, with warm water)..."
+                      value={med.instructions}
+                      onChange={e => updateMed(idx, 'instructions', e.target.value)}
+                      className="glass-input w-full px-3 py-1.5 rounded-lg text-xs bg-white placeholder-slate-400"
+                    />
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Additional notes */}
-            <div className="glass-panel p-5 rounded-2xl bg-white shadow-card space-y-2">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">{t('additionalNotes')}</label>
+            {/* Additional Notes */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                Lifestyle Advice & Follow-Up Notes
+              </label>
               <textarea
-                rows={2}
+                rows={3}
+                placeholder="Dietary precautions, hydration advice, or when to seek immediate emergency care..."
                 value={additionalNotes}
                 onChange={e => setAdditionalNotes(e.target.value)}
-                placeholder="Dietary instructions, fluids, follow-up recommendations..."
-                className="glass-input w-full p-3 rounded-xl text-sm bg-white resize-none"
+                className="glass-input w-full p-3 rounded-xl text-xs bg-white resize-none"
               />
             </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={() => navigate('/doctor/dashboard')}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300"
-              >
-                {t('cancel')}
-              </button>
+            {/* Submit */}
+            <div className="pt-2 flex justify-end">
               <button
                 type="submit"
                 disabled={generating}
@@ -358,12 +453,12 @@ export default function PrescriptionForm() {
                 {generating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Signing with SHA-256...</span>
+                    <span>Signing with Digital Certificate...</span>
                   </>
                 ) : (
                   <>
-                    <Shield className="w-4 h-4" />
-                    <span>Sign & Generate e-Prescription (FR-7)</span>
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Digitally Sign & Issue e-Prescription (FR-7)</span>
                   </>
                 )}
               </button>

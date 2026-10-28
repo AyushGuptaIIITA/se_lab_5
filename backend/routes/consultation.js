@@ -31,12 +31,41 @@ router.post('/start', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied. You are not a participant in this appointment.' });
     }
 
+    if (appointment.status === 'completed') {
+      return res.status(400).json({ 
+        message: 'This consultation has already been completed and concluded. Rejoining is not permitted.',
+        isCompleted: true
+      });
+    }
+
+    if (appointment.status === 'cancelled') {
+      return res.status(400).json({ 
+        message: 'This appointment was cancelled. Cannot enter consultation room.',
+        isCancelled: true
+      });
+    }
+
     // Check if a session already exists for this appointment
     let session = await ConsultationSession.findOne({ appointment: appointmentId });
     if (session) {
-      // If already exists, return it so both doctor and patient connect to the same session
+      if (session.status === 'completed') {
+        return res.status(400).json({
+          message: 'This consultation session has ended. Rejoining completed meetings is not allowed.',
+          isCompleted: true,
+          session
+        });
+      }
+
+      // Session is in-progress: allow seamless rejoin and log network event
+      session.networkEvents.push({
+        event: 'reconnected',
+        timestamp: new Date(),
+        details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} rejoined consultation call`
+      });
+      await session.save();
+
       return res.json({
-        message: 'Joined existing consultation session.',
+        message: 'Reconnected to active consultation session.',
         session
       });
     }

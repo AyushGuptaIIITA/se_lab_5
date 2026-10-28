@@ -145,9 +145,17 @@ export default function DoctorDashboard() {
                 <Calendar className="w-4 h-4 text-blue-600" />
                 <span>{t('todaySchedule')}</span>
               </h2>
-              <span className="text-xs font-semibold text-slate-500">
-                {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </span>
+              <div className="flex items-center space-x-3">
+                <span className="text-xs font-semibold text-slate-500 hidden sm:inline">
+                  {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+                </span>
+                <Link
+                  to="/doctor/appointments"
+                  className="text-xs font-bold text-blue-600 hover:underline"
+                >
+                  All Meetings →
+                </Link>
+              </div>
             </div>
             {loading ? (
               <div className="py-12 flex items-center justify-center">
