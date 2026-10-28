@@ -6,8 +6,8 @@ const createAuditLog = require('../middleware/auditLog');
 
 const router = express.Router();
 
-// POST /api/consultation/start — Start a consultation session (doctor only)
-router.post('/start', auth, doctorOnly, async (req, res) => {
+// POST /api/consultation/start — Start or join a consultation session (doctor or patient)
+router.post('/start', auth, async (req, res) => {
   try {
     const { appointmentId } = req.body;
 
@@ -23,20 +23,26 @@ router.post('/start', auth, doctorOnly, async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found.' });
     }
 
-    if (appointment.doctor._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied. This is not your appointment.' });
+    const userId = req.user._id.toString();
+    const isDoctor = appointment.doctor._id.toString() === userId;
+    const isPatient = appointment.patient._id.toString() === userId;
+
+    if (!isDoctor && !isPatient && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. You are not a participant in this appointment.' });
     }
 
     // Check if a session already exists for this appointment
-    const existingSession = await ConsultationSession.findOne({ appointment: appointmentId });
-    if (existingSession) {
-      return res.status(400).json({
-        message: 'A consultation session already exists for this appointment.',
-        session: existingSession
+    let session = await ConsultationSession.findOne({ appointment: appointmentId });
+    if (session) {
+      // If already exists, return it so both doctor and patient connect to the same session
+      return res.json({
+        message: 'Joined existing consultation session.',
+        session
       });
     }
 
-    const session = new ConsultationSession({
+    // Create session
+    session = new ConsultationSession({
       appointment: appointmentId,
       patient: appointment.patient._id,
       doctor: appointment.doctor._id,
@@ -45,16 +51,18 @@ router.post('/start', auth, doctorOnly, async (req, res) => {
       networkEvents: [{
         event: 'connected',
         timestamp: new Date(),
-        details: 'Consultation session started'
+        details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} joined session`
       }]
     });
 
     await session.save();
 
-    // Update appointment status
-    appointment.status = 'in-progress';
-    appointment.consultationSession = session._id;
-    await appointment.save();
+    // Update appointment status to in-progress if confirmed or pending
+    if (['pending', 'confirmed'].includes(appointment.status)) {
+      appointment.status = 'in-progress';
+      appointment.consultationSession = session._id;
+      await appointment.save();
+    }
 
     // Create audit log
     await createAuditLog(
@@ -64,7 +72,7 @@ router.post('/start', auth, doctorOnly, async (req, res) => {
       req.user.name,
       'ConsultationSession',
       session._id,
-      { appointmentId, patientName: appointment.patient.name },
+      { appointmentId, participant: req.user.name, role: req.user.role },
       req.ip
     );
 
@@ -75,6 +83,35 @@ router.post('/start', auth, doctorOnly, async (req, res) => {
   } catch (err) {
     console.error('Start consultation error:', err);
     res.status(500).json({ message: 'Server error starting consultation.' });
+  }
+});
+
+// GET /api/consultation/appointment/:appointmentId — Get active session for an appointment
+router.get('/appointment/:appointmentId', auth, async (req, res) => {
+  try {
+    const session = await ConsultationSession.findOne({
+      appointment: req.params.appointmentId
+    })
+      .populate('patient', 'name email phone')
+      .populate('doctor', 'name email specialization');
+
+    if (!session) {
+      return res.json({ session: null });
+    }
+
+    const userId = req.user._id.toString();
+    if (
+      req.user.role !== 'admin' &&
+      session.doctor._id.toString() !== userId &&
+      session.patient._id.toString() !== userId
+    ) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    res.json({ session });
+  } catch (err) {
+    console.error('Get session by appointment error:', err);
+    res.status(500).json({ message: 'Server error fetching session.' });
   }
 });
 
@@ -172,6 +209,46 @@ router.post('/:sessionId/network-event', auth, async (req, res) => {
   } catch (err) {
     console.error('Network event error:', err);
     res.status(500).json({ message: 'Server error logging network event.' });
+  }
+});
+
+// POST /api/consultation/:sessionId/message — Send in-consultation chat message
+router.post('/:sessionId/message', auth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Message text is required.' });
+    }
+
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Consultation session not found.' });
+    }
+
+    const userId = req.user._id.toString();
+    if (session.doctor.toString() !== userId && session.patient.toString() !== userId) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const newMessage = {
+      senderId: req.user._id,
+      senderName: req.user.name,
+      senderRole: req.user.role,
+      text: text.trim(),
+      timestamp: new Date()
+    };
+
+    session.messages.push(newMessage);
+    await session.save();
+
+    res.json({
+      message: 'Message sent.',
+      chatMessage: newMessage,
+      messages: session.messages
+    });
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ message: 'Server error sending message.' });
   }
 });
 

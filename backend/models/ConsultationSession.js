@@ -10,6 +10,14 @@ const networkEventSchema = new mongoose.Schema({
   details: { type: String }
 }, { _id: true });
 
+const messageSchema = new mongoose.Schema({
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  senderName: { type: String, required: true },
+  senderRole: { type: String, enum: ['doctor', 'patient'], required: true },
+  text: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now }
+}, { _id: true });
+
 const consultationSessionSchema = new mongoose.Schema({
   appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: true },
   patient: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -22,6 +30,7 @@ const consultationSessionSchema = new mongoose.Schema({
   startedAt: { type: Date },
   endedAt: { type: Date },
   consultationNotes: { type: String },
+  messages: [messageSchema],
   networkEvents: [networkEventSchema],
   duration: { type: Number }
 }, { timestamps: true });

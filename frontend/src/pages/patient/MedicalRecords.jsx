@@ -17,7 +17,7 @@ function RecordCard({ record }) {
         onClick={() => setOpen(!open)}
       >
         <div className="flex items-start space-x-3.5">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 text-[#ff6f61] flex items-center justify-center flex-shrink-0 font-bold border border-orange-100">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-bold border border-blue-100">
             <Calendar className="w-5 h-5" />
           </div>
           <div>
@@ -28,9 +28,9 @@ function RecordCard({ record }) {
             <p className="text-xs text-gray-500 mt-0.5">
               {new Date(record.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · {record.timeSlot?.start}
             </p>
-            <p className="text-xs text-[#10847e] font-semibold mt-0.5 capitalize">{record.type} · {record.doctor?.specialization}</p>
+            <p className="text-xs text-blue-700 font-semibold mt-0.5 capitalize">{record.type} · {record.doctor?.specialization}</p>
             {pres && (
-              <span className="inline-flex items-center space-x-1 text-xs font-bold text-[#10847e] mt-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+              <span className="inline-flex items-center space-x-1 text-xs font-bold text-emerald-700 mt-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                 <CheckCircle className="w-3.5 h-3.5" />
                 <span>e-Prescription: {pres.diagnosis}</span>
               </span>
@@ -62,7 +62,7 @@ function RecordCard({ record }) {
                   <div className="space-y-2">
                     {pres.medications.map((med, i) => (
                       <div key={i} className="p-3 rounded-lg bg-white border border-gray-200 text-xs flex items-start space-x-2.5">
-                        <Pill className="w-4 h-4 text-[#ff6f61] flex-shrink-0 mt-0.5" />
+                        <Pill className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <span className="font-bold text-gray-900">{med.name}</span>
                           <span className="text-gray-500"> · {med.dosage} · {med.frequency}</span>
@@ -74,8 +74,8 @@ function RecordCard({ record }) {
                 </div>
               )}
               {pres.digitalSignature?.signedBy && (
-                <div className="p-3 rounded-lg bg-[#e8f6f5] border border-teal-200 text-xs text-gray-700">
-                  <p className="font-bold text-[#10847e] uppercase tracking-wider mb-1 flex items-center space-x-1">
+                <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200 text-xs text-gray-700">
+                  <p className="font-bold text-blue-700 uppercase tracking-wider mb-1 flex items-center space-x-1">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span>Verified SHA-256 Digital Signature</span>
                   </p>
@@ -84,7 +84,7 @@ function RecordCard({ record }) {
                 </div>
               )}
               <div className="flex items-center space-x-2 text-xs pt-1">
-                <span className="text-gray-500">1mg Pharmacy Status:</span>
+                <span className="text-gray-500">TeleMed Pharmacy Status:</span>
                 <StatusBadge status={pres.pharmacyStatus} />
               </div>
             </div>
@@ -134,7 +134,7 @@ export default function MedicalRecords() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-gray-200">
           <div>
             <h1 className="text-2xl font-black text-gray-900 flex items-center space-x-2">
-              <span className="text-[#ff6f61]">My Health Records & e-Prescriptions</span>
+              <span className="text-blue-600">My Health Records & e-Prescriptions</span>
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">Permanent immutable log of clinical consultations and verified prescriptions</p>
           </div>

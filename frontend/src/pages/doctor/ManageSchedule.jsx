@@ -38,7 +38,7 @@ export default function ManageSchedule() {
     fetchAll();
   }, []);
 
-  const addSlot = () => {
+  const addSlot = async () => {
     if (!newStartTime || !newEndTime) {
       setAlert({ type: 'error', message: 'Please specify both start and end times.' });
       return;
@@ -49,25 +49,58 @@ export default function ManageSchedule() {
     }
 
     const newSlot = {
-      _key: Date.now(),
       day: selectedDay,
       startTime: newStartTime,
       endTime: newEndTime,
       isActive: true
     };
 
-    setSlots(prev => [...prev, newSlot]);
-    setAlert({ type: 'success', message: `Added ${selectedDay} (${newStartTime} - ${newEndTime}) slot. Click "Save Schedule" to commit changes.` });
+    const updated = [...slots, newSlot];
+    setSlots(updated);
+    setSaving(true);
+    try {
+      const res = await api.put('/doctors/schedule', { availableSlots: updated });
+      if (res.data?.doctor?.availableSlots) {
+        setSlots(res.data.doctor.availableSlots);
+      }
+      setAlert({ type: 'success', message: `Added & saved ${selectedDay} (${newStartTime} – ${newEndTime}) slot.` });
+    } catch (err) {
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to save slot.' });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const removeSlot = (idx) => setSlots(s => s.filter((_, i) => i !== idx));
-  const toggleSlot = (idx) => setSlots(s => s.map((sl, i) => i === idx ? { ...sl, isActive: !sl.isActive } : sl));
+  const removeSlot = async (idx) => {
+    const updated = slots.filter((_, i) => i !== idx);
+    setSlots(updated);
+    try {
+      await api.put('/doctors/schedule', { availableSlots: updated });
+      setAlert({ type: 'success', message: 'Slot deleted.' });
+    } catch {
+      setAlert({ type: 'error', message: 'Failed to update schedule on server.' });
+    }
+  };
+
+  const toggleSlot = async (idx) => {
+    const updated = slots.map((sl, i) => i === idx ? { ...sl, isActive: !sl.isActive } : sl);
+    setSlots(updated);
+    try {
+      await api.put('/doctors/schedule', { availableSlots: updated });
+      setAlert({ type: 'success', message: 'Slot availability updated.' });
+    } catch {
+      setAlert({ type: 'error', message: 'Failed to update slot status.' });
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
     setAlert(null);
     try {
-      await api.put('/doctors/schedule', { availableSlots: slots });
+      const res = await api.put('/doctors/schedule', { availableSlots: slots });
+      if (res.data?.doctor?.availableSlots) {
+        setSlots(res.data.doctor.availableSlots);
+      }
       setAlert({ type: 'success', message: 'Schedule updated successfully!' });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to save.' });

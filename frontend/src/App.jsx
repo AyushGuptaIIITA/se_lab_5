@@ -75,7 +75,7 @@ function PublicRoute({ children }) {
 // ─── App Shell ───────────────────────────────────────────────────────────────
 function AppRoutes() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       <Routes>
         {/* ── Public ── */}
         <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />
@@ -89,6 +89,7 @@ function AppRoutes() {
         <Route path="/patient/dashboard" element={<ProtectedRoute roles={['patient']}><PatientDashboard /></ProtectedRoute>} />
         <Route path="/patient/search-doctors" element={<ProtectedRoute roles={['patient']}><SearchDoctors /></ProtectedRoute>} />
         <Route path="/patient/medical-records" element={<ProtectedRoute roles={['patient']}><MedicalRecords /></ProtectedRoute>} />
+        <Route path="/patient/consultation/:appointmentId" element={<ProtectedRoute roles={['patient']}><ConsultationRoom /></ProtectedRoute>} />
 
         {/* ── Doctor ── */}
         <Route path="/doctor/dashboard" element={<ProtectedRoute roles={['doctor']}><DoctorDashboard /></ProtectedRoute>} />

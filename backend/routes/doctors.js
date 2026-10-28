@@ -152,7 +152,15 @@ router.put('/schedule', auth, doctorOnly, async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
-    doctor.availableSlots = availableSlots;
+    const dayOrder = { Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7 };
+    const cleanedSlots = availableSlots.map(s => ({
+      day: s.day,
+      startTime: s.startTime || s.start,
+      endTime: s.endTime || s.end,
+      isActive: s.isActive !== false
+    })).sort((a, b) => (dayOrder[a.day] - dayOrder[b.day]) || (a.startTime || '').localeCompare(b.startTime || ''));
+
+    doctor.availableSlots = cleanedSlots;
     await doctor.save();
 
     const doctorObj = doctor.toObject();

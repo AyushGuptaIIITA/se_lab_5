@@ -164,6 +164,15 @@ export default function PatientDashboard() {
                 </div>
               </div>
               <div className="flex items-center space-x-2">
+                {['confirmed', 'in-progress'].includes(next.status) && (
+                  <Link
+                    to={`/patient/consultation/${next._id}`}
+                    className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Video className="w-4 h-4" />
+                    <span>Join Video Call</span>
+                  </Link>
+                )}
                 <Link
                   to="/patient/medical-records"
                   className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-white border border-slate-200 hover:border-blue-500 transition-all shadow-xs"
@@ -220,7 +229,27 @@ export default function PatientDashboard() {
                         </p>
                       </div>
                     </div>
-                    <StatusBadge status={apt.status} />
+                    <div className="flex items-center space-x-2">
+                      {['confirmed', 'in-progress'].includes(apt.status) && (
+                        <Link
+                          to={`/patient/consultation/${apt._id}`}
+                          className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition-colors"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Join Call</span>
+                        </Link>
+                      )}
+                      {apt.status === 'completed' && (
+                        <Link
+                          to="/patient/medical-records"
+                          className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Prescription</span>
+                        </Link>
+                      )}
+                      <StatusBadge status={apt.status} />
+                    </div>
                   </div>
                 ))}
               </div>
