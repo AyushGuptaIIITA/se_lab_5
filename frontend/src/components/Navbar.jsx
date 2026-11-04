@@ -25,8 +25,9 @@ function NavLink({ to, icon: Icon, label, onClick }) {
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const { t, lang, setLang } = useLanguage();
+  const { t, lang, setLang, supportedLanguages = [] } = useLanguage();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
   if (!user) return null;
 
@@ -34,16 +35,16 @@ export default function Navbar() {
     patient: [
       { to: '/patient/dashboard', icon: LayoutDashboard, label: t('dashboard') },
       { to: '/patient/search-doctors', icon: Search, label: t('searchDoctors') },
-      { to: '/patient/appointments', icon: Video, label: 'My Appointments' },
-      { to: '/patient/prescriptions', icon: Pill, label: 'My Prescriptions' },
+      { to: '/patient/appointments', icon: Video, label: t('My Appointments') },
+      { to: '/patient/prescriptions', icon: Pill, label: t('My Prescriptions') },
       { to: '/patient/medical-records', icon: FileText, label: t('medicalRecords') },
     ],
     doctor: [
       { to: '/doctor/dashboard', icon: LayoutDashboard, label: t('dashboard') },
-      { to: '/doctor/appointments', icon: Video, label: 'My Consultations' },
-      { to: '/doctor/patients', icon: Users, label: 'Patient Directory' },
+      { to: '/doctor/appointments', icon: Video, label: t('My Consultations') },
+      { to: '/doctor/patients', icon: Users, label: t('Patient Directory') },
       { to: '/doctor/schedule', icon: Calendar, label: t('schedule') },
-      { to: '/doctor/prescription', icon: FileText, label: 'e-Prescription' },
+      { to: '/doctor/prescription', icon: FileText, label: t('e-Prescription') },
     ],
     admin: [
       { to: '/admin/dashboard', icon: LayoutDashboard, label: t('dashboard') },
@@ -89,14 +90,37 @@ export default function Navbar() {
 
           {/* Right section */}
           <div className="hidden md:flex items-center space-x-3">
-            {/* Language toggle */}
-            <button
-              onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
-              <span>{lang === 'en' ? 'हिन्दी' : 'English'}</span>
-            </button>
+            {/* Multi-Language Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+              >
+                <Globe className="w-3.5 h-3.5 text-blue-600" />
+                <span>{supportedLanguages.find(l => l.code === lang)?.name || 'हिन्दी'}</span>
+              </button>
+
+              {langDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in max-h-64 overflow-y-auto divide-y divide-slate-100">
+                  {supportedLanguages.map(l => (
+                    <button
+                      key={l.code}
+                      type="button"
+                      onClick={() => {
+                        setLang(l.code);
+                        setLangDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between transition-colors ${
+                        lang === l.code ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{l.name}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">{l.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* User chip */}
             <Link
@@ -124,14 +148,17 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* Mobile hamburger */}
+          {/* Mobile hamburger & language */}
           <div className="flex md:hidden items-center space-x-2">
-            <button
-              onClick={() => setLang(lang === 'en' ? 'hi' : 'en')}
-              className="px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-200 text-blue-600"
+            <select
+              value={lang}
+              onChange={e => setLang(e.target.value)}
+              className="px-2 py-1 rounded-lg text-xs font-bold border border-slate-200 text-blue-600 bg-white"
             >
-              {lang === 'en' ? 'हि' : 'EN'}
-            </button>
+              {supportedLanguages.map(l => (
+                <option key={l.code} value={l.code}>{l.name}</option>
+              ))}
+            </select>
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="p-2 text-slate-700 hover:text-blue-600"

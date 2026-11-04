@@ -3,6 +3,7 @@ import { User, Mail, Phone, Lock, Save, Eye, EyeOff, Loader2, ArrowLeft, ShieldC
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import AlertBanner from '../components/AlertBanner';
+import LocationSelector from '../components/LocationSelector';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -242,18 +243,15 @@ export default function Profile() {
                       </select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {['village', 'district', 'state', 'pincode'].map(f => (
-                      <div key={f}>
-                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{t(f)}</label>
-                        <input
-                          type="text"
-                          value={form[f]}
-                          onChange={setF(f)}
-                          className="glass-input w-full px-3 py-2 rounded-lg text-xs bg-white"
-                        />
-                      </div>
-                    ))}
+                  <div className="pt-2 border-t border-teal-200">
+                    <LocationSelector
+                      country={form.country || 'India'}
+                      state={form.state}
+                      district={form.district}
+                      village={form.village}
+                      pincode={form.pincode}
+                      onChange={(f, val) => setForm(prev => ({ ...prev, [f]: val }))}
+                    />
                   </div>
                 </div>
               )}

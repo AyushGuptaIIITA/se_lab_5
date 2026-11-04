@@ -17,6 +17,7 @@ const statusStyles = {
 
 const statusLabels = {
   'in-progress': 'In Progress',
+  pending: 'Pending Approval',
 };
 
 export default function StatusBadge({ status }) {

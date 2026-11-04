@@ -49,7 +49,7 @@ const userSchema = new mongoose.Schema({
 
   // Common
   profileImage: { type: String },
-  status: { type: String, enum: ['active', 'suspended'], default: 'active' },
+  status: { type: String, enum: ['active', 'suspended', 'pending'], default: 'pending' },
   lastLogin: { type: Date }
 }, { timestamps: true });
 

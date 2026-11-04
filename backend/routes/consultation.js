@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const ConsultationSession = require('../models/ConsultationSession');
 const Appointment = require('../models/Appointment');
 const { auth, doctorOnly } = require('../middleware/auth');
@@ -307,6 +308,92 @@ router.get('/:sessionId', auth, async (req, res) => {
   } catch (err) {
     console.error('Get consultation session error:', err);
     res.status(500).json({ message: 'Server error fetching consultation session.' });
+  }
+});
+
+// POST /api/consultation/:sessionId/signal — WebRTC Peer Signaling (Offer, Answer, ICE Candidate)
+router.post('/:sessionId/signal', auth, async (req, res) => {
+  try {
+    const { type, data } = req.body;
+    if (!type || !data) {
+      return res.status(400).json({ message: 'Signal type and data are required.' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.sessionId)) {
+      return res.status(404).json({ message: 'Invalid or non-existent session ID.' });
+    }
+
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found.' });
+    }
+
+    const userId = req.user._id.toString();
+    const isDoc = session.doctor.toString() === userId;
+    const isPat = session.patient.toString() === userId;
+
+    if (!isDoc && !isPat && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    const senderRole = isDoc ? 'doctor' : 'patient';
+
+    if (!session.signals) {
+      session.signals = [];
+    }
+
+    // Keep signals array manageable (last 50 signals)
+    if (session.signals.length > 50) {
+      session.signals = session.signals.slice(-30);
+    }
+
+    session.signals.push({
+      senderRole,
+      senderId: req.user._id,
+      type,
+      data,
+      timestamp: new Date()
+    });
+
+    await session.save();
+
+    res.json({ success: true, message: 'Signal dispatched successfully.' });
+  } catch (err) {
+    console.error('WebRTC signal post error:', err);
+    res.status(500).json({ message: 'Server error posting WebRTC signal.' });
+  }
+});
+
+// GET /api/consultation/:sessionId/signals — WebRTC Peer Signals Polling
+router.get('/:sessionId/signals', auth, async (req, res) => {
+  try {
+    const { since } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.sessionId)) {
+      return res.status(404).json({ message: 'Invalid or non-existent session ID.' });
+    }
+
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found.' });
+    }
+
+    const userId = req.user._id.toString();
+    const isDoc = session.doctor.toString() === userId;
+    const myRole = isDoc ? 'doctor' : 'patient';
+
+    // Retrieve signals originating from the OTHER participant
+    let signals = (session.signals || []).filter(s => s.senderRole !== myRole);
+
+    if (since) {
+      const sinceDate = new Date(since);
+      signals = signals.filter(s => new Date(s.timestamp) > sinceDate);
+    }
+
+    res.json({ signals });
+  } catch (err) {
+    console.error('WebRTC signals get error:', err);
+    res.status(500).json({ message: 'Server error retrieving WebRTC signals.' });
   }
 });
 

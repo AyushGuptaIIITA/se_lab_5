@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Stethoscope, Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, Sparkles, ShieldCheck } from 'lucide-react';
+import { Stethoscope, Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, ShieldCheck, Globe, Clock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import AlertBanner from '../components/AlertBanner';
@@ -12,7 +12,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [alert, setAlert] = useState(null);
   const { login } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang, setLang } = useLanguage();
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -26,24 +26,30 @@ export default function Login() {
         navigate(`/${user.role}/dashboard`);
       }, 500);
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || t('loginError') });
+      const msg = err.response?.data?.message || t('loginError');
+      setAlert({ 
+        type: err.response?.data?.status === 'pending' ? 'warning' : 'error', 
+        message: msg 
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const fillDemo = (role) => {
-    const creds = {
-      patient: { email: 'patient1@demo.com', password: 'password123' },
-      doctor: { email: 'dr.sharma@demo.com', password: 'password123' },
-      admin: { email: 'admin@demo.com', password: 'password123' },
-    };
-    setEmail(creds[role].email);
-    setPassword(creds[role].password);
-  };
-
   return (
     <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-50">
+      {/* Language Switcher Bar at Top */}
+      <div className="w-full max-w-md flex justify-end mb-2">
+        <button
+          type="button"
+          onClick={() => setLang(lang === 'hi' ? 'en' : 'hi')}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-slate-700 bg-white border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors"
+        >
+          <Globe className="w-3.5 h-3.5 text-blue-600" />
+          <span>{lang === 'hi' ? 'English' : 'हिन्दी (Hindi)'}</span>
+        </button>
+      </div>
+
       <div className="w-full max-w-md text-center mb-6 animate-fade-in">
         <div className="inline-flex items-center justify-center space-x-2.5 mb-2">
           <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
@@ -53,7 +59,7 @@ export default function Login() {
             Tele<span className="text-blue-600">Med</span>
           </span>
         </div>
-        <p className="text-sm font-semibold text-slate-700">Telemedicine Appointment & e-Prescription Platform</p>
+        <p className="text-sm font-semibold text-slate-700">{t('tagline')}</p>
         <p className="text-xs text-slate-500">Secure digital consultations with certified medical specialists</p>
       </div>
 
@@ -128,38 +134,7 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Quick Demo Credentials */}
-          <div className="pt-4 border-t border-slate-100">
-            <p className="text-xs text-slate-600 font-bold mb-2 flex items-center space-x-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Click to test with demo accounts:</span>
-            </p>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => fillDemo('patient')}
-                className="py-2 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100/70 text-emerald-700 font-bold border border-emerald-200 transition-colors text-center"
-              >
-                👤 Patient
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('doctor')}
-                className="py-2 px-2 rounded-xl bg-blue-50 hover:bg-blue-100/70 text-blue-700 font-bold border border-blue-200 transition-colors text-center"
-              >
-                🩺 Doctor
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('admin')}
-                className="py-2 px-2 rounded-xl bg-purple-50 hover:bg-purple-100/70 text-purple-700 font-bold border border-purple-200 transition-colors text-center"
-              >
-                ⚡ Admin
-              </button>
-            </div>
-          </div>
-
-          <div className="text-center text-xs text-slate-600">
+          <div className="text-center text-xs text-slate-600 pt-2 border-t border-slate-100">
             {t('dontHaveAccount')}{' '}
             <Link to="/register" className="font-bold text-blue-600 hover:underline">
               {t('register')}

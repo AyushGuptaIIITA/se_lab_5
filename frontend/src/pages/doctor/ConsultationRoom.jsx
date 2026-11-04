@@ -36,9 +36,15 @@ export default function ConsultationRoom() {
 
   // Video Media Stream
   const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
   const streamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const signalsProcessedRef = useRef(new Set());
   const [hasCamera, setHasCamera] = useState(false);
   const [cameraError, setCameraError] = useState(null);
+  const [remoteConnected, setRemoteConnected] = useState(false);
+  const [remoteHasStream, setRemoteHasStream] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -76,7 +82,88 @@ export default function ConsultationRoom() {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
     setHasCamera(false);
+    setRemoteConnected(false);
+    setRemoteHasStream(false);
+  };
+
+  const RTC_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
+    ]
+  };
+
+  const initPeerConnection = () => {
+    if (peerConnectionRef.current) return peerConnectionRef.current;
+    
+    try {
+      const pc = new RTCPeerConnection(RTC_CONFIG);
+      peerConnectionRef.current = pc;
+
+      // Add local audio and video tracks if already active
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          pc.addTrack(track, streamRef.current);
+        });
+      }
+
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          remoteStreamRef.current = event.streams[0];
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+          }
+          setRemoteHasStream(true);
+          setRemoteConnected(true);
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && session?._id) {
+          api.post(`/consultation/${session._id}/signal`, {
+            type: 'candidate',
+            data: event.candidate
+          }).catch(() => {});
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') {
+          setRemoteConnected(true);
+          setRemoteHasStream(true);
+        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+          setRemoteConnected(false);
+        }
+      };
+
+      return pc;
+    } catch (e) {
+      console.warn('RTCPeerConnection initialization error:', e);
+      return null;
+    }
+  };
+
+  const createAndSendOffer = async (targetSessionId) => {
+    const sid = targetSessionId || session?._id;
+    if (!sid) return;
+    try {
+      const pc = initPeerConnection();
+      if (!pc) return;
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+      await pc.setLocalDescription(offer);
+      await api.post(`/consultation/${sid}/signal`, {
+        type: 'offer',
+        data: offer
+      });
+    } catch (err) {
+      console.warn('Error creating WebRTC offer:', err);
+    }
   };
 
   // Toggle mic
@@ -141,6 +228,12 @@ export default function ConsultationRoom() {
 
           // Start camera automatically if session already in-progress
           startCamera();
+
+          if (isDoctor) {
+            setTimeout(() => {
+              createAndSendOffer(sess._id);
+            }, 1200);
+          }
         }
       } catch (err) {
         if (mounted) setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to load consultation room details.' });
@@ -166,26 +259,57 @@ export default function ConsultationRoom() {
     }
   }, [hasCamera]);
 
-  // 2. Poll messages when session is active
+  // 2. Poll messages & WebRTC signaling when session is active
   useEffect(() => {
     if (!session?._id || session?.status === 'completed') return;
 
     const pollSession = async () => {
       try {
-        const res = await api.get(`/consultation/${session._id}`);
-        if (res.data?.session?.messages) {
-          setMessages(res.data.session.messages);
+        const [resSession, resSignals] = await Promise.all([
+          api.get(`/consultation/${session._id}`),
+          api.get(`/consultation/${session._id}/signals`).catch(() => ({ data: { signals: [] } }))
+        ]);
+
+        if (resSession.data?.session?.messages) {
+          setMessages(resSession.data.session.messages);
         }
-        if (res.data?.session?.status === 'completed') {
-          setSession(res.data.session);
+        if (resSession.data?.session?.status === 'completed') {
+          setSession(resSession.data.session);
           stopCamera();
+          return;
+        }
+
+        // Process WebRTC signaling packets
+        const signals = resSignals.data?.signals || [];
+        for (const sig of signals) {
+          if (!sig._id || signalsProcessedRef.current.has(sig._id)) continue;
+          signalsProcessedRef.current.add(sig._id);
+
+          const pc = initPeerConnection();
+          if (!pc) continue;
+
+          if (sig.type === 'offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await api.post(`/consultation/${session._id}/signal`, {
+              type: 'answer',
+              data: answer
+            });
+          } else if (sig.type === 'answer') {
+            if (pc.signalingState === 'have-local-offer') {
+              await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+            }
+          } else if (sig.type === 'candidate' && sig.data) {
+            await pc.addIceCandidate(new RTCIceCandidate(sig.data)).catch(() => {});
+          }
         }
       } catch {
         // Silent polling error
       }
     };
 
-    pollingRef.current = setInterval(pollSession, 2500);
+    pollingRef.current = setInterval(pollSession, 2000);
     return () => clearInterval(pollingRef.current);
   }, [session?._id, session?.status]);
 
@@ -209,6 +333,13 @@ export default function ConsultationRoom() {
       
       // Start local camera stream
       await startCamera();
+
+      // If doctor, initiate WebRTC offer
+      if (isDoctor) {
+        setTimeout(() => {
+          createAndSendOffer(currentSession._id);
+        }, 1000);
+      }
 
       if (!timerRef.current) {
         timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
@@ -465,21 +596,33 @@ export default function ConsultationRoom() {
                 )}
               </div>
 
-              {/* Remote Peer Video Feed (Counterpart) */}
+              {/* Remote Peer Video Feed (Live WebRTC Video Stream) */}
               <div className="aspect-video rounded-2xl bg-slate-800 border border-slate-700 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                <div className="flex flex-col items-center justify-center p-4">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-2xl font-black shadow-md mb-2">
-                    {(isDoctor ? patientName : doctorName)?.charAt(0) || 'P'}
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  className={`w-full h-full object-cover ${remoteHasStream ? 'block' : 'hidden'}`}
+                />
+
+                {!remoteHasStream && (
+                  <div className="flex flex-col items-center justify-center p-4">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-2xl font-black shadow-md mb-2">
+                      {(isDoctor ? patientName : doctorName)?.charAt(0) || 'P'}
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                      <span className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                      <span className="text-xs text-slate-300 font-semibold">
+                        {remoteConnected ? 'Connected · Receiving media stream...' : `Waiting for ${isDoctor ? patientName : doctorName} to connect...`}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-xs text-emerald-300 font-semibold">Live Remote Peer Stream</span>
-                  </div>
-                </div>
+                )}
 
                 <div className="absolute bottom-2.5 left-2.5 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-black/75 text-white text-[11px] font-semibold backdrop-blur-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                  <span className={`w-1.5 h-1.5 rounded-full ${remoteConnected ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'}`} />
                   <span>{isDoctor ? patientName : doctorName}</span>
+                  {remoteConnected && <span className="text-[10px] text-emerald-300 font-normal">· Live WebRTC</span>}
                 </div>
               </div>
             </div>

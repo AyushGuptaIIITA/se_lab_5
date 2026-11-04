@@ -22,7 +22,19 @@ const appointmentSchema = new mongoose.Schema({
   notes: { type: String },
   cancelReason: { type: String },
   consultationSession: { type: mongoose.Schema.Types.ObjectId, ref: 'ConsultationSession' },
-  prescription: { type: mongoose.Schema.Types.ObjectId, ref: 'Prescription' }
+  prescription: { type: mongoose.Schema.Types.ObjectId, ref: 'Prescription' },
+  payment: {
+    status: {
+      type: String,
+      enum: ['unpaid', 'paid', 'refunded'],
+      default: 'unpaid'
+    },
+    method: { type: String }, // 'upi', 'card', 'netbanking'
+    transactionId: { type: String },
+    amount: { type: Number },
+    cardLast4: { type: String },
+    paidAt: { type: Date }
+  }
 }, { timestamps: true, versionKey: '__v' });
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

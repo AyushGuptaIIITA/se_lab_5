@@ -50,13 +50,13 @@ router.get('/users', auth, adminOnly, async (req, res) => {
   }
 });
 
-// PATCH /api/admin/users/:id/status — Activate/suspend user
+// PATCH /api/admin/users/:id/status — Activate/suspend/approve user
 router.patch('/users/:id/status', auth, adminOnly, async (req, res) => {
   try {
     const { status } = req.body;
 
-    if (!status || !['active', 'suspended'].includes(status)) {
-      return res.status(400).json({ message: 'Valid status (active/suspended) is required.' });
+    if (!status || !['active', 'suspended', 'pending'].includes(status)) {
+      return res.status(400).json({ message: 'Valid status (active/suspended/pending) is required.' });
     }
 
     const user = await User.findById(req.params.id).select('-password');
@@ -69,28 +69,65 @@ router.patch('/users/:id/status', auth, adminOnly, async (req, res) => {
       return res.status(400).json({ message: 'Cannot change your own status.' });
     }
 
+    const oldStatus = user.status;
     user.status = status;
     await user.save();
 
     // Create audit log
+    const eventType = status === 'active' 
+      ? (oldStatus === 'pending' ? 'USER_APPROVED' : 'USER_ACTIVATED')
+      : (status === 'suspended' ? 'USER_SUSPENDED' : 'USER_STATUS_UPDATED');
+
     await createAuditLog(
-      status === 'suspended' ? 'USER_SUSPENDED' : 'USER_ACTIVATED',
+      eventType,
       req.user._id,
       req.user.role,
       req.user.name,
       'User',
       user._id,
-      { targetUser: user.name, targetEmail: user.email, newStatus: status },
+      { targetUser: user.name, targetEmail: user.email, oldStatus, newStatus: status },
       req.ip
     );
 
     res.json({
-      message: `User ${status === 'suspended' ? 'suspended' : 'activated'} successfully.`,
+      message: `User account has been marked as ${status}.`,
       user
     });
   } catch (err) {
     console.error('Admin update user status error:', err);
     res.status(500).json({ message: 'Server error updating user status.' });
+  }
+});
+
+// PATCH /api/admin/users/:id/approve — Directly approve pending user
+router.patch('/users/:id/approve', auth, adminOnly, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    user.status = 'active';
+    await user.save();
+
+    await createAuditLog(
+      'USER_APPROVED',
+      req.user._id,
+      req.user.role,
+      req.user.name,
+      'User',
+      user._id,
+      { targetUser: user.name, targetEmail: user.email, role: user.role },
+      req.ip
+    );
+
+    res.json({
+      message: `User ${user.name} (${user.role}) approved successfully. They can now log in.`,
+      user
+    });
+  } catch (err) {
+    console.error('Admin approve user error:', err);
+    res.status(500).json({ message: 'Server error approving user.' });
   }
 });
 

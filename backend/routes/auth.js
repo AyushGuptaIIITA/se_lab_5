@@ -18,14 +18,42 @@ router.post('/register', async (req, res) => {
       dateOfBirth, gender, bloodGroup, address, emergencyContact
     } = req.body;
 
+    // Disallow registration for Admin role
+    if (role === 'admin') {
+      return res.status(403).json({ message: 'Registration for Administrator role is not permitted. Admin accounts are pre-provisioned.' });
+    }
+
+    if (!role || !['patient', 'doctor'].includes(role)) {
+      return res.status(400).json({ message: 'Please select a valid role (patient or doctor).' });
+    }
+
+    // Mobile Number Validation
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({ message: 'Mobile number is required.' });
+    }
+    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+    const indianPhoneRegex = /^(\+91|91|0)?[6-9]\d{9}$/;
+    const internationalPhoneRegex = /^\+?[1-9]\d{9,14}$/;
+
+    if (!indianPhoneRegex.test(cleanPhone) && !internationalPhoneRegex.test(cleanPhone)) {
+      return res.status(400).json({ message: 'Please enter a valid 10-digit mobile number (e.g. 9876543210).' });
+    }
+
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(400).json({ message: 'User with this email already exists.' });
     }
 
-    // Build user object
-    const userData = { name, email, password, phone, role };
+    // Build user object with default 'pending' approval status
+    const userData = { 
+      name, 
+      email, 
+      password, 
+      phone: cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone.slice(-10)}`, 
+      role,
+      status: 'pending' // Requires admin acceptance before login
+    };
 
     // Doctor-specific fields
     if (role === 'doctor') {
@@ -56,23 +84,16 @@ router.post('/register', async (req, res) => {
       user.name,
       'User',
       user._id,
-      { email: user.email, role: user.role },
+      { email: user.email, role: user.role, status: 'pending' },
       req.ip
-    );
-
-    // Generate token
-    const token = jwt.sign(
-      { id: user._id, role: user.role, email: user.email, name: user.name },
-      JWT_SECRET,
-      { expiresIn: '7d' }
     );
 
     const userObj = user.toObject();
     delete userObj.password;
 
     res.status(201).json({
-      message: 'Registration successful.',
-      token,
+      message: 'Registration successful! Your account is currently pending administrator approval. You will be able to log in as soon as an admin approves your profile.',
+      pendingApproval: true,
       user: userObj
     });
   } catch (err) {
@@ -95,8 +116,19 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
+    // Check account approval status
+    if (user.status === 'pending') {
+      return res.status(403).json({ 
+        message: 'Your account is pending administrator approval. Please wait for an administrator to review and activate your account before logging in.',
+        status: 'pending'
+      });
+    }
+
     if (user.status === 'suspended') {
-      return res.status(403).json({ message: 'Account suspended. Contact administrator.' });
+      return res.status(403).json({ 
+        message: 'Account suspended. Contact administrator.',
+        status: 'suspended'
+      });
     }
 
     const isMatch = await user.comparePassword(password);

@@ -9,7 +9,7 @@ const router = express.Router();
 // POST /api/appointments — Book a new appointment (patient only)
 router.post('/', auth, patientOnly, async (req, res) => {
   try {
-    const { doctor, date, timeSlot, type, symptoms } = req.body;
+    const { doctor, date, timeSlot, type, symptoms, payment } = req.body;
 
     if (!doctor || !date || !timeSlot || !timeSlot.start || !timeSlot.end) {
       return res.status(400).json({ message: 'Doctor, date, and timeSlot are required.' });
@@ -47,7 +47,15 @@ router.post('/', auth, patientOnly, async (req, res) => {
       timeSlot,
       type: type || 'general',
       symptoms,
-      status: 'pending'
+      status: 'pending',
+      payment: payment ? {
+        status: payment.status || 'paid',
+        method: payment.method || 'card',
+        transactionId: payment.transactionId || `TXN-${Date.now()}`,
+        amount: payment.amount || doctorUser.consultationFee || 200,
+        cardLast4: payment.cardLast4 || '',
+        paidAt: payment.paidAt || new Date()
+      } : { status: 'unpaid' }
     });
 
     await appointment.save();

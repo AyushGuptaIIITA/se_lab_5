@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Filter, ChevronRight, Star, IndianRupee, Loader2, Calendar, Clock, Check, X, ShieldCheck, Stethoscope, AlertCircle } from 'lucide-react';
+import { Search, Filter, ChevronRight, Star, IndianRupee, Loader2, Calendar, Clock, Check, X, ShieldCheck, Stethoscope, AlertCircle, CreditCard } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
+import PaymentGatewayModal from '../../components/PaymentGatewayModal';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 
@@ -78,6 +79,7 @@ export default function SearchDoctors() {
   const [symptoms, setSymptoms] = useState('');
   const [apptType, setApptType] = useState('general');
   const [booking, setBooking] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
   const [alert, setAlert] = useState(null);
 
   useEffect(() => {
@@ -118,22 +120,32 @@ export default function SearchDoctors() {
     fetchSlots();
   }, [selectedDoctor, selectedDate]);
 
-  const handleBook = async () => {
+  const handleBook = () => {
     if (!selectedSlot || !selectedDate) {
       setAlert({ type: 'error', message: 'Please select an appointment date and an available time slot.' });
       return;
     }
+    // Open Payment Gateway modal
+    setShowPayment(true);
+  };
+
+  const handlePaymentSuccess = async (paymentData) => {
+    setShowPayment(false);
     setBooking(true);
     setAlert(null);
     try {
-      await api.post('/appointments', {
+      const res = await api.post('/appointments', {
         doctor: selectedDoctor._id,
         date: selectedDate,
         timeSlot: selectedSlot,
         type: apptType,
         symptoms,
+        payment: paymentData
       });
-      setAlert({ type: 'success', message: t('bookingSuccess') });
+      setAlert({ 
+        type: 'success', 
+        message: `Appointment booked & payment verified successfully! (Txn ID: ${paymentData.transactionId})` 
+      });
       setSelectedDoctor(null);
       setSelectedSlot(null);
       setSymptoms('');
@@ -356,7 +368,8 @@ export default function SearchDoctors() {
                     </>
                   ) : (
                     <>
-                      <span>{t('confirmBooking')}</span>
+                      <CreditCard className="w-4 h-4" />
+                      <span>Proceed to Payment (₹{selectedDoctor.consultationFee || 200})</span>
                       <ChevronRight className="w-4 h-4" />
                     </>
                   )}
@@ -373,6 +386,18 @@ export default function SearchDoctors() {
             )}
           </div>
         </div>
+
+        {/* Payment Gateway Modal */}
+        {selectedDoctor && (
+          <PaymentGatewayModal
+            isOpen={showPayment}
+            onClose={() => setShowPayment(false)}
+            amount={selectedDoctor.consultationFee || 200}
+            doctorName={selectedDoctor.name}
+            specialization={selectedDoctor.specialization}
+            onPaymentSuccess={handlePaymentSuccess}
+          />
+        )}
       </div>
     </Layout>
   );
