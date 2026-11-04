@@ -315,8 +315,8 @@ router.get('/:sessionId', auth, async (req, res) => {
 router.post('/:sessionId/signal', auth, async (req, res) => {
   try {
     const { type, data } = req.body;
-    if (!type || !data) {
-      return res.status(400).json({ message: 'Signal type and data are required.' });
+    if (!type) {
+      return res.status(400).json({ message: 'Signal type is required.' });
     }
 
     if (!mongoose.Types.ObjectId.isValid(req.params.sessionId)) {
@@ -329,21 +329,29 @@ router.post('/:sessionId/signal', auth, async (req, res) => {
     }
 
     const userId = req.user._id.toString();
-    const isDoc = session.doctor.toString() === userId;
-    const isPat = session.patient.toString() === userId;
+    const isDoc = session.doctor.toString() === userId || req.user.role === 'doctor';
+    const isPat = session.patient.toString() === userId || req.user.role === 'patient';
 
     if (!isDoc && !isPat && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    const senderRole = isDoc ? 'doctor' : 'patient';
+    const senderRole = req.user.role === 'doctor' ? 'doctor' : 'patient';
 
     if (!session.signals) {
       session.signals = [];
     }
 
-    // Keep signals array manageable (last 50 signals)
-    if (session.signals.length > 50) {
+    // When a fresh offer or restart is sent, purge outdated offers/answers to prevent stale state machine errors
+    if (type === 'offer' || type === 'restart') {
+      session.signals = session.signals.filter(s => {
+        const ageSec = (Date.now() - new Date(s.timestamp).getTime()) / 1000;
+        return ageSec < 15 && s.type === 'candidate'; // Keep only very recent candidates
+      });
+    }
+
+    // Keep signals array bounded
+    if (session.signals.length > 60) {
       session.signals = session.signals.slice(-30);
     }
 
@@ -351,7 +359,7 @@ router.post('/:sessionId/signal', auth, async (req, res) => {
       senderRole,
       senderId: req.user._id,
       type,
-      data,
+      data: data || {},
       timestamp: new Date()
     });
 
@@ -378,11 +386,9 @@ router.get('/:sessionId/signals', auth, async (req, res) => {
       return res.status(404).json({ message: 'Session not found.' });
     }
 
-    const userId = req.user._id.toString();
-    const isDoc = session.doctor.toString() === userId;
-    const myRole = isDoc ? 'doctor' : 'patient';
+    const myRole = req.user.role === 'doctor' ? 'doctor' : 'patient';
 
-    // Retrieve signals originating from the OTHER participant
+    // Retrieve signals originating strictly from the OTHER participant
     let signals = (session.signals || []).filter(s => s.senderRole !== myRole);
 
     if (since) {
@@ -390,7 +396,10 @@ router.get('/:sessionId/signals', auth, async (req, res) => {
       signals = signals.filter(s => new Date(s.timestamp) > sinceDate);
     }
 
-    res.json({ signals });
+    res.json({ 
+      signals, 
+      serverTime: new Date().toISOString() 
+    });
   } catch (err) {
     console.error('WebRTC signals get error:', err);
     res.status(500).json({ message: 'Server error retrieving WebRTC signals.' });

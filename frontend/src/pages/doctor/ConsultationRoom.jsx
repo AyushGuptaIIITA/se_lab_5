@@ -41,10 +41,15 @@ export default function ConsultationRoom() {
   const remoteStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const signalsProcessedRef = useRef(new Set());
+  const pendingCandidatesRef = useRef([]);
+  const currentSessionIdRef = useRef(null);
+  const lastSignalTimestampRef = useRef(null);
   const [hasCamera, setHasCamera] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [remoteHasStream, setRemoteHasStream] = useState(false);
+  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -55,25 +60,67 @@ export default function ConsultationRoom() {
   const chatContainerRef = useRef(null);
   const pollingRef = useRef(null);
 
-  // Initialize Camera Stream
+  const RTC_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' }
+    ]
+  };
+
+  // Attach local media stream tracks to peer connection
+  const attachLocalTracksToPeer = (pc, stream) => {
+    if (!pc || !stream) return;
+    try {
+      const senders = pc.getSenders();
+      stream.getTracks().forEach(track => {
+        const alreadyAdded = senders.some(s => s.track && s.track.kind === track.kind);
+        if (!alreadyAdded) {
+          pc.addTrack(track, stream);
+        }
+      });
+    } catch (e) {
+      console.warn('[WebRTC] Error attaching local tracks:', e);
+    }
+  };
+
+  // Initialize Camera & Microphone Stream
   const startCamera = async () => {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        // Stop any old stream tracks first
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true,
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
+
         streamRef.current = stream;
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
+          localVideoRef.current.play().catch(() => {});
         }
         setHasCamera(true);
         setCameraError(null);
+
+        // Attach new tracks to existing RTCPeerConnection if active
+        if (peerConnectionRef.current) {
+          attachLocalTracksToPeer(peerConnectionRef.current, stream);
+        }
+
+        return stream;
       }
     } catch (err) {
-      console.warn('Webcam/Mic permission denied or not available:', err);
-      setCameraError('Webcam/Microphone access not available or blocked in this browser. Showing simulated clinical video feed.');
+      console.warn('Webcam/Mic permission error:', err);
+      setCameraError('Webcam/Microphone access not available or blocked in this browser. Please allow camera and mic permissions.');
       setHasCamera(false);
+      return null;
     }
   };
 
@@ -91,42 +138,62 @@ export default function ConsultationRoom() {
     setRemoteHasStream(false);
   };
 
-  const RTC_CONFIG = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
-    ]
-  };
+  const initPeerConnection = (forceReset = false) => {
+    if (!forceReset && peerConnectionRef.current && peerConnectionRef.current.connectionState !== 'closed') {
+      return peerConnectionRef.current;
+    }
 
-  const initPeerConnection = () => {
-    if (peerConnectionRef.current) return peerConnectionRef.current;
-    
+    if (peerConnectionRef.current) {
+      try {
+        peerConnectionRef.current.close();
+      } catch {}
+      peerConnectionRef.current = null;
+    }
+
     try {
       const pc = new RTCPeerConnection(RTC_CONFIG);
       peerConnectionRef.current = pc;
 
-      // Add local audio and video tracks if already active
+      // Add local audio and video tracks
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          pc.addTrack(track, streamRef.current);
-        });
+        attachLocalTracksToPeer(pc, streamRef.current);
       }
 
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          remoteStreamRef.current = event.streams[0];
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
+        console.log('[WebRTC] Received remote track:', event.track.kind, event.streams);
+        let stream = (event.streams && event.streams[0]) ? event.streams[0] : null;
+        if (!stream) {
+          if (!remoteStreamRef.current) {
+            remoteStreamRef.current = new MediaStream();
           }
-          setRemoteHasStream(true);
-          setRemoteConnected(true);
+          remoteStreamRef.current.addTrack(event.track);
+          stream = remoteStreamRef.current;
+        } else {
+          remoteStreamRef.current = stream;
         }
+
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = stream;
+          const playPromise = remoteVideoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              setRemoteAudioBlocked(false);
+            }).catch(e => {
+              console.warn('Remote video play warning:', e);
+              if (e.name === 'NotAllowedError') {
+                setRemoteAudioBlocked(true);
+              }
+            });
+          }
+        }
+        setRemoteHasStream(true);
+        setRemoteConnected(true);
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate && session?._id) {
-          api.post(`/consultation/${session._id}/signal`, {
+        const sid = currentSessionIdRef.current;
+        if (event.candidate && sid) {
+          api.post(`/consultation/${sid}/signal`, {
             type: 'candidate',
             data: event.candidate
           }).catch(() => {});
@@ -134,6 +201,7 @@ export default function ConsultationRoom() {
       };
 
       pc.onconnectionstatechange = () => {
+        console.log('[WebRTC] Connection state changed to:', pc.connectionState);
         if (pc.connectionState === 'connected') {
           setRemoteConnected(true);
           setRemoteHasStream(true);
@@ -149,20 +217,63 @@ export default function ConsultationRoom() {
     }
   };
 
-  const createAndSendOffer = async (targetSessionId) => {
-    const sid = targetSessionId || session?._id;
+  // Broadcast presence / ready signal
+  const broadcastReady = async (targetSessionId) => {
+    const sid = targetSessionId || session?._id || currentSessionIdRef.current;
     if (!sid) return;
     try {
-      const pc = initPeerConnection();
+      await api.post(`/consultation/${sid}/signal`, {
+        type: 'ready',
+        data: { role: isDoctor ? 'doctor' : 'patient' }
+      });
+      console.log('[WebRTC] Ready signal dispatched.');
+    } catch (err) {
+      console.warn('Error sending ready signal:', err);
+    }
+  };
+
+  // Create and send WebRTC SDP Offer
+  const createAndSendOffer = async (targetSessionId) => {
+    const sid = targetSessionId || session?._id || currentSessionIdRef.current;
+    if (!sid) return;
+    try {
+      if (!streamRef.current) {
+        await startCamera();
+      }
+
+      const pc = initPeerConnection(true);
       if (!pc) return;
-      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+
+      if (streamRef.current) {
+        attachLocalTracksToPeer(pc, streamRef.current);
+      }
+
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
       await pc.setLocalDescription(offer);
+
       await api.post(`/consultation/${sid}/signal`, {
         type: 'offer',
         data: offer
       });
+      console.log('[WebRTC] Offer dispatched successfully.');
     } catch (err) {
       console.warn('Error creating WebRTC offer:', err);
+    }
+  };
+
+  // Drain pending ICE candidates once remote description is set
+  const drainPendingCandidates = async (pc) => {
+    if (!pc) return;
+    while (pendingCandidatesRef.current.length > 0) {
+      const candidate = pendingCandidatesRef.current.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('Error applying pending ICE candidate:', e);
+      }
     }
   };
 
@@ -184,6 +295,38 @@ export default function ConsultationRoom() {
       });
     }
     setCamOn(!camOn);
+  };
+
+  // Manual Reconnect Video & Audio function
+  const handleReconnect = async () => {
+    setReconnecting(true);
+    setAlert({ type: 'info', message: 'Reconnecting video and audio stream with peer...' });
+    try {
+      if (peerConnectionRef.current) {
+        try { peerConnectionRef.current.close(); } catch {}
+        peerConnectionRef.current = null;
+      }
+      pendingCandidatesRef.current = [];
+      signalsProcessedRef.current.clear();
+      setRemoteHasStream(false);
+      setRemoteConnected(false);
+
+      await startCamera();
+
+      const sid = session?._id || currentSessionIdRef.current;
+      if (sid) {
+        if (isDoctor) {
+          await createAndSendOffer(sid);
+        } else {
+          await broadcastReady(sid);
+        }
+      }
+      setTimeout(() => setAlert(null), 3000);
+    } catch (err) {
+      setAlert({ type: 'error', message: 'Reconnect failed. Please verify camera & microphone permissions.' });
+    } finally {
+      setReconnecting(false);
+    }
   };
 
   // 1. Load appointment and check if a session already exists
@@ -209,6 +352,7 @@ export default function ConsultationRoom() {
         const sess = sessionRes.data?.session;
         if (sess) {
           setSession(sess);
+          currentSessionIdRef.current = sess._id;
           setMessages(sess.messages || []);
           if (sess.consultationNotes) setNotes(sess.consultationNotes);
           
@@ -226,13 +370,18 @@ export default function ConsultationRoom() {
             timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
           }
 
-          // Start camera automatically if session already in-progress
-          startCamera();
+          // Start camera automatically
+          await startCamera();
 
           if (isDoctor) {
             setTimeout(() => {
               createAndSendOffer(sess._id);
-            }, 1200);
+            }, 800);
+          } else {
+            // Patient notifies doctor they are in the room with camera ready
+            setTimeout(() => {
+              broadcastReady(sess._id);
+            }, 800);
           }
         }
       } catch (err) {
@@ -259,15 +408,23 @@ export default function ConsultationRoom() {
     }
   }, [hasCamera]);
 
+  // Keep currentSessionIdRef in sync with session._id
+  useEffect(() => {
+    if (session?._id) {
+      currentSessionIdRef.current = session._id;
+    }
+  }, [session?._id]);
+
   // 2. Poll messages & WebRTC signaling when session is active
   useEffect(() => {
     if (!session?._id || session?.status === 'completed') return;
 
     const pollSession = async () => {
       try {
+        const sinceParam = lastSignalTimestampRef.current ? `?since=${encodeURIComponent(lastSignalTimestampRef.current)}` : '';
         const [resSession, resSignals] = await Promise.all([
           api.get(`/consultation/${session._id}`),
-          api.get(`/consultation/${session._id}/signals`).catch(() => ({ data: { signals: [] } }))
+          api.get(`/consultation/${session._id}/signals${sinceParam}`).catch(() => ({ data: { signals: [] } }))
         ]);
 
         if (resSession.data?.session?.messages) {
@@ -279,29 +436,70 @@ export default function ConsultationRoom() {
           return;
         }
 
+        if (resSignals.data?.serverTime) {
+          lastSignalTimestampRef.current = resSignals.data.serverTime;
+        }
+
         // Process WebRTC signaling packets
         const signals = resSignals.data?.signals || [];
         for (const sig of signals) {
           if (!sig._id || signalsProcessedRef.current.has(sig._id)) continue;
           signalsProcessedRef.current.add(sig._id);
 
+          console.log('[WebRTC] Processing incoming signal:', sig.type);
+
+          // If other user is ready and I am doctor, send fresh offer
+          if (sig.type === 'ready' && isDoctor) {
+            await createAndSendOffer(session._id);
+            continue;
+          }
+
           const pc = initPeerConnection();
           if (!pc) continue;
 
           if (sig.type === 'offer') {
-            await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            await api.post(`/consultation/${session._id}/signal`, {
-              type: 'answer',
-              data: answer
-            });
-          } else if (sig.type === 'answer') {
-            if (pc.signalingState === 'have-local-offer') {
+            try {
+              if (!streamRef.current) {
+                await startCamera();
+              }
+              if (streamRef.current) {
+                attachLocalTracksToPeer(pc, streamRef.current);
+              }
+
               await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+              await drainPendingCandidates(pc);
+
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+
+              await api.post(`/consultation/${session._id}/signal`, {
+                type: 'answer',
+                data: answer
+              });
+              console.log('[WebRTC] Answer dispatched successfully.');
+            } catch (err) {
+              console.warn('Error processing WebRTC offer:', err);
+            }
+          } else if (sig.type === 'answer') {
+            try {
+              if (pc.signalingState === 'have-local-offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+                await drainPendingCandidates(pc);
+                console.log('[WebRTC] Remote answer accepted.');
+              }
+            } catch (err) {
+              console.warn('Error processing WebRTC answer:', err);
             }
           } else if (sig.type === 'candidate' && sig.data) {
-            await pc.addIceCandidate(new RTCIceCandidate(sig.data)).catch(() => {});
+            if (pc.remoteDescription && pc.remoteDescription.type) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(sig.data));
+              } catch (e) {
+                console.warn('Error adding ICE candidate:', e);
+              }
+            } else {
+              pendingCandidatesRef.current.push(sig.data);
+            }
           }
         }
       } catch {
@@ -328,17 +526,22 @@ export default function ConsultationRoom() {
       const res = await api.post('/consultation/start', { appointmentId });
       const currentSession = res.data.session;
       setSession(currentSession);
+      currentSessionIdRef.current = currentSession._id;
       setMessages(currentSession.messages || []);
       setAlert({ type: 'success', message: res.data?.message || 'Connected to live consultation session.' });
       
       // Start local camera stream
       await startCamera();
 
-      // If doctor, initiate WebRTC offer
+      // If doctor, initiate WebRTC offer; if patient, notify doctor
       if (isDoctor) {
         setTimeout(() => {
           createAndSendOffer(currentSession._id);
-        }, 1000);
+        }, 800);
+      } else {
+        setTimeout(() => {
+          broadcastReady(currentSession._id);
+        }, 800);
       }
 
       if (!timerRef.current) {
@@ -605,6 +808,20 @@ export default function ConsultationRoom() {
                   className={`w-full h-full object-cover ${remoteHasStream ? 'block' : 'hidden'}`}
                 />
 
+                {remoteAudioBlocked && (
+                  <button
+                    onClick={() => {
+                      if (remoteVideoRef.current) {
+                        remoteVideoRef.current.play().then(() => setRemoteAudioBlocked(false)).catch(() => {});
+                      }
+                    }}
+                    className="absolute inset-0 z-20 bg-slate-950/80 flex flex-col items-center justify-center text-white p-4 cursor-pointer hover:bg-slate-950/90 transition-colors"
+                  >
+                    <Volume2 className="w-10 h-10 text-emerald-400 mb-2 animate-bounce" />
+                    <span className="text-xs font-bold bg-emerald-600 px-3 py-1.5 rounded-lg shadow-sm">Click to Unmute & Enable Two-Way Audio</span>
+                  </button>
+                )}
+
                 {!remoteHasStream && (
                   <div className="flex flex-col items-center justify-center p-4">
                     <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-2xl font-black shadow-md mb-2">
@@ -655,6 +872,17 @@ export default function ConsultationRoom() {
                     title="Enable Camera Device"
                   >
                     <Camera className="w-4 h-4" />
+                  </button>
+                )}
+                {session && (
+                  <button
+                    onClick={handleReconnect}
+                    disabled={reconnecting}
+                    className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all disabled:opacity-50"
+                    title="Reconnect WebRTC two-way video and audio stream"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${reconnecting ? 'animate-spin' : ''}`} />
+                    <span>{reconnecting ? 'Reconnecting...' : 'Reconnect Call'}</span>
                   </button>
                 )}
               </div>
