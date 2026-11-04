@@ -51,6 +51,8 @@ export default function ConsultationRoom() {
   const [remoteHasStream, setRemoteHasStream] = useState(false);
   const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const jitsiApiRef = useRef(null);
+  const jitsiMountedRef = useRef(false);
 
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -235,7 +237,121 @@ export default function ConsultationRoom() {
     }
   };
 
+    const loadJitsiScript = () => {
+    return new Promise((resolve) => {
+      if (window.JitsiMeetExternalAPI) {
+        resolve(true);
+        return;
+      }
+      const existing = document.getElementById('jitsi-external-api-script');
+      if (existing) {
+        if (window.JitsiMeetExternalAPI) {
+          resolve(true);
+        } else {
+          existing.addEventListener('load', () => resolve(true));
+          existing.addEventListener('error', () => resolve(false));
+        }
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'jitsi-external-api-script';
+      script.src = 'https://meet.jit.si/external_api.js';
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const mountJitsi = async (targetSession) => {
+    if (jitsiMountedRef.current) return;
+    const currentSess = targetSession || session;
+    if (!currentSess || currentSess.status !== 'in-progress') return;
+
+    const loaded = await loadJitsiScript();
+    if (!loaded || !window.JitsiMeetExternalAPI) {
+      console.warn('Failed to load Jitsi Meet script');
+      return;
+    }
+
+    const container = document.getElementById('jitsi-video-container');
+    if (!container) return;
+
+    try {
+      container.innerHTML = '';
+      const roomName = 'TeleMedRuralAppt-' + appointmentId;
+      const domain = 'meet.jit.si';
+      const options = {
+        roomName,
+        width: '100%',
+        height: '100%',
+        parentNode: container,
+        userInfo: {
+          displayName: isDoctor 
+            ? (user?.name?.startsWith('Dr.') ? user.name : 'Dr. ' + (user?.name || 'Physician'))
+            : (user?.name || 'Patient'),
+          email: user?.email || ''
+        },
+        configOverwrite: {
+          startWithAudioMuted: false,
+          startWithVideoMuted: false,
+          prejoinPageEnabled: false,
+          prejoinConfig: { enabled: false },
+          disableDeepLinking: true,
+          enableClosePage: false,
+          tileView: { active: true },
+          toolbarButtons: [
+            'camera',
+            'microphone',
+            'tileview',
+            'chat',
+            'hangup',
+            'settings',
+            'desktop'
+          ]
+        },
+        interfaceConfigOverwrite: {
+          SHOW_JITSI_WATERMARK: false,
+          SHOW_WATERMARK_FOR_GUESTS: false,
+          SHOW_BRAND_WATERMARK: false,
+          SHOW_POWERED_BY: false,
+          DEFAULT_REMOTE_DISPLAY_NAME: isDoctor ? patientName : doctorName,
+          TOOLBAR_BUTTONS: [
+            'camera',
+            'microphone',
+            'tileview',
+            'chat',
+            'hangup',
+            'settings',
+            'desktop'
+          ]
+        }
+      };
+
+      const jApi = new window.JitsiMeetExternalAPI(domain, options);
+      jitsiApiRef.current = jApi;
+      jitsiMountedRef.current = true;
+      setRemoteConnected(true);
+      setRemoteHasStream(true);
+
+      jApi.addEventListener('readyToClose', () => {
+        if (isDoctor) {
+          markAsCompleted();
+        } else {
+          navigate('/patient/appointments');
+        }
+      });
+    } catch (e) {
+      console.error('Error mounting Jitsi video:', e);
+    }
+  };
+
   const stopCamera = () => {
+    if (jitsiApiRef.current) {
+      try { jitsiApiRef.current.dispose(); } catch {}
+      jitsiApiRef.current = null;
+      jitsiMountedRef.current = false;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -519,7 +635,16 @@ export default function ConsultationRoom() {
     }
   }, [hasCamera]);
 
-  // Patient waiting room polling: automatically activates when doctor starts the call
+    useEffect(() => {
+    if (session && session.status === 'in-progress' && !jitsiMountedRef.current) {
+      const timer = setTimeout(() => {
+        mountJitsi(session);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [session?.status, session?._id]);
+
+// Patient waiting room polling: automatically activates when doctor starts the call
   useEffect(() => {
     if (isDoctor || session) return;
 
@@ -537,6 +662,7 @@ export default function ConsultationRoom() {
           await startCamera();
           setTimeout(() => {
             broadcastReady(activeSess._id);
+          setTimeout(() => mountJitsi(activeSess), 300);
           }, 600);
 
           if (!timerRef.current) {
@@ -673,6 +799,7 @@ export default function ConsultationRoom() {
       currentSessionIdRef.current = currentSession._id;
       setMessages(currentSession.messages || []);
       setAlert({ type: 'success', message: res.data?.message || 'Connected to live consultation session.' });
+      setTimeout(() => mountJitsi(currentSession), 300);
       
       // Start local camera stream
       await startCamera();
@@ -971,6 +1098,92 @@ export default function ConsultationRoom() {
     );
   }
 
+  // ─── IF DOCTOR AND CONSULTATION NOT STARTED YET: DOCTOR START WORKSPACE ───
+  if (isDoctor && (!session || session.status !== 'in-progress')) {
+    return (
+      <Layout>
+        <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+          <div className="glass-panel p-6 rounded-3xl bg-white shadow-card border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                Doctor Consultation Workspace
+              </span>
+              <h1 className="text-2xl font-black text-slate-900 mt-2">
+                Consultation with {patientName}
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Appointment #{appointmentId?.slice(-6)} · Scheduled for {formatAppointmentDate(appointment?.date)} at {appointment?.timeSlot?.start} – {appointment?.timeSlot?.end}
+              </p>
+            </div>
+
+            <button
+              onClick={startSession}
+              disabled={starting}
+              className="flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 flex-shrink-0 cursor-pointer"
+            >
+              {starting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Activating Call...</span>
+                </>
+              ) : (
+                <>
+                  <Video className="w-5 h-5" />
+                  <span>Start Live Video Consultation</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Patient Details & Clinical Case Summary */}
+          <div className="glass-card p-6 rounded-3xl border border-slate-200 bg-white shadow-card space-y-4">
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
+              <User className="w-4 h-4 text-blue-600" />
+              <span>Patient Profile & Case Details</span>
+            </h2>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block text-[11px]">Patient Name</span>
+                <span className="font-bold text-slate-800 text-sm">{patientName}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block text-[11px]">Gender</span>
+                <span className="font-bold text-slate-800 text-sm capitalize">{appointment?.patient?.gender || '—'}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block text-[11px]">Blood Group</span>
+                <span className="font-bold text-rose-600 text-sm">{appointment?.patient?.bloodGroup || '—'}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block text-[11px]">Contact Phone</span>
+                <span className="font-bold text-slate-800 text-sm">{appointment?.patient?.phone || '—'}</span>
+              </div>
+            </div>
+
+            {appointment?.symptoms && (
+              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 text-xs">
+                <span className="font-bold text-blue-900 block mb-1">Chief Complaint & Symptoms:</span>
+                <p className="text-slate-700 leading-relaxed text-sm">{appointment.symptoms}</p>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-between items-center text-xs text-slate-500 border-t border-slate-100">
+              <span>Appointment Fee: ₹{appointment?.doctor?.consultationFee || 300} · Status: Confirmed</span>
+              <Link
+                to="/doctor/appointments"
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center space-x-1"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Return to Schedule</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="space-y-4 max-w-6xl mx-auto">
@@ -1031,84 +1244,9 @@ export default function ConsultationRoom() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Main Video Stage */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Local User Video Feed (Live Webcam via getUserMedia) */}
-              <div className="aspect-video rounded-2xl bg-slate-900 border border-slate-800 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${hasCamera && camOn ? 'block' : 'hidden'}`}
-                />
-
-                {(!hasCamera || !camOn) && (
-                  <div className="flex flex-col items-center justify-center p-4">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-2xl font-black shadow-md mb-2">
-                      {user?.name?.charAt(0) || 'U'}
-                    </div>
-                    <p className="text-xs text-slate-400 font-semibold">
-                      {camOn ? 'Connecting camera...' : 'Camera Paused'}
-                    </p>
-                  </div>
-                )}
-
-                <div className="absolute bottom-2.5 left-2.5 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-black/75 text-white text-[11px] font-semibold backdrop-blur-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>{user?.name} (You)</span>
-                  {hasCamera && <span className="text-[10px] text-emerald-300 font-normal">· HD</span>}
-                </div>
-
-                {!micOn && (
-                  <div className="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-rose-500 text-white shadow-sm" title="Mic Muted">
-                    <MicOff className="w-3.5 h-3.5" />
-                  </div>
-                )}
-              </div>
-
-              {/* Remote Peer Video Feed (Live WebRTC Video Stream) */}
-              <div className="aspect-video rounded-2xl bg-slate-800 border border-slate-700 flex flex-col items-center justify-center relative overflow-hidden shadow-inner">
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className={`w-full h-full object-cover ${remoteHasStream ? 'block' : 'hidden'}`}
-                />
-
-                {remoteAudioBlocked && (
-                  <button
-                    onClick={() => {
-                      if (remoteVideoRef.current) {
-                        remoteVideoRef.current.play().then(() => setRemoteAudioBlocked(false)).catch(() => {});
-                      }
-                    }}
-                    className="absolute inset-0 z-20 bg-slate-950/80 flex flex-col items-center justify-center text-white p-4 cursor-pointer hover:bg-slate-950/90 transition-colors"
-                  >
-                    <Volume2 className="w-10 h-10 text-emerald-400 mb-2 animate-bounce" />
-                    <span className="text-xs font-bold bg-emerald-600 px-3 py-1.5 rounded-lg shadow-sm">Click to Unmute & Enable Two-Way Audio</span>
-                  </button>
-                )}
-
-                {!remoteHasStream && (
-                  <div className="flex flex-col items-center justify-center p-4">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center text-2xl font-black shadow-md mb-2">
-                      {(isDoctor ? patientName : doctorName)?.charAt(0) || 'P'}
-                    </div>
-                    <div className="flex items-center space-x-1.5">
-                      <span className={`w-2 h-2 rounded-full ${remoteConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                      <span className="text-xs text-slate-300 font-semibold">
-                        {remoteConnected ? 'Connected · Receiving media stream...' : `Waiting for ${isDoctor ? patientName : doctorName} to connect...`}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="absolute bottom-2.5 left-2.5 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-black/75 text-white text-[11px] font-semibold backdrop-blur-xs">
-                  <span className={`w-1.5 h-1.5 rounded-full ${remoteConnected ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'}`} />
-                  <span>{isDoctor ? patientName : doctorName}</span>
-                  {remoteConnected && <span className="text-[10px] text-emerald-300 font-normal">· Live WebRTC</span>}
-                </div>
-              </div>
+            {/* Live HD Video Room Container */}
+            <div className="w-full h-[520px] rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl relative">
+              <div id="jitsi-video-container" className="w-full h-full" />
             </div>
 
             {/* Video Controls Bar */}

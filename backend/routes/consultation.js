@@ -350,32 +350,38 @@ router.post('/:sessionId/signal', auth, async (req, res) => {
 
     const senderRole = req.user.role === 'doctor' ? 'doctor' : 'patient';
 
-    if (!session.signals) {
-      session.signals = [];
-    }
-
-    // When a fresh offer or restart is sent, purge outdated offers/answers to prevent stale state machine errors
-    if (type === 'offer' || type === 'restart') {
-      session.signals = session.signals.filter(s => {
-        const ageSec = (Date.now() - new Date(s.timestamp).getTime()) / 1000;
-        return ageSec < 15 && s.type === 'candidate'; // Keep only very recent candidates
-      });
-    }
-
-    // Keep signals array bounded
-    if (session.signals.length > 60) {
-      session.signals = session.signals.slice(-30);
-    }
-
-    session.signals.push({
+    // Atomic update to avoid Mongoose VersionError under concurrent signals
+    const newSignal = {
       senderRole,
       senderId: req.user._id,
       type,
       data: data || {},
       timestamp: new Date()
-    });
+    };
 
-    await session.save();
+    if (type === 'offer' || type === 'restart') {
+      // Clear out stale signals and push fresh offer atomically
+      await ConsultationSession.findByIdAndUpdate(
+        req.params.sessionId,
+        {
+          $set: {
+            signals: [newSignal]
+          }
+        }
+      );
+    } else {
+      await ConsultationSession.findByIdAndUpdate(
+        req.params.sessionId,
+        {
+          $push: {
+            signals: {
+              $each: [newSignal],
+              $slice: -60 // Keep only last 60 signals
+            }
+          }
+        }
+      );
+    }
 
     res.json({ success: true, message: 'Signal dispatched successfully.' });
   } catch (err) {
