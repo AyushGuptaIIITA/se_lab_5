@@ -7,6 +7,7 @@ import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { formatAppointmentDate } from '../../utils/dateUtils';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
   return (
@@ -154,7 +155,7 @@ export default function PatientDashboard() {
                   <div className="mt-1 flex items-center space-x-4 text-xs text-slate-600">
                     <span className="flex items-center space-x-1">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{new Date(next.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                      <span>{formatAppointmentDate(next.date, { showYear: false })}</span>
                     </span>
                     <span className="flex items-center space-x-1">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -240,7 +241,7 @@ export default function PatientDashboard() {
                           {apt.doctor?.name?.startsWith('Dr.') ? apt.doctor?.name : `Dr. ${apt.doctor?.name || '—'}`}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {new Date(apt.date).toLocaleDateString('en-IN')} · {apt.timeSlot?.start}
+                          {formatAppointmentDate(apt.date, { showWeekday: false })} · {apt.timeSlot?.start}
                         </p>
                       </div>
                     </div>

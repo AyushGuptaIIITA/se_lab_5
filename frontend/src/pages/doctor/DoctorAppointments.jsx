@@ -10,6 +10,7 @@ import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { formatAppointmentDate } from '../../utils/dateUtils';
 
 export default function DoctorAppointments() {
   const { t } = useLanguage();
@@ -203,7 +204,7 @@ export default function DoctorAppointments() {
                         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
                           <span className="flex items-center space-x-1">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{new Date(apt.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            <span>{formatAppointmentDate(apt.date)}</span>
                           </span>
                           <span className="flex items-center space-x-1">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />

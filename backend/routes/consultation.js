@@ -71,6 +71,14 @@ router.post('/start', auth, async (req, res) => {
       });
     }
 
+    // Only the assigned Doctor (or Admin) can initiate/activate a new consultation session
+    if (!isDoctor && req.user.role !== 'admin') {
+      return res.status(403).json({
+        message: 'Waiting for the doctor to initiate the consultation. You will be automatically connected as soon as the doctor starts the call.',
+        waitingForDoctor: true
+      });
+    }
+
     // Create session
     session = new ConsultationSession({
       appointment: appointmentId,
@@ -119,26 +127,30 @@ router.post('/start', auth, async (req, res) => {
 // GET /api/consultation/appointment/:appointmentId — Get active session for an appointment
 router.get('/appointment/:appointmentId', auth, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.appointmentId)) {
+      return res.status(404).json({ message: 'Invalid appointment ID format.' });
+    }
+
+    const appointment = await Appointment.findById(req.params.appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found.' });
+    }
+
+    const userId = req.user._id.toString();
+    const isDoctor = appointment.doctor.toString() === userId;
+    const isPatient = appointment.patient.toString() === userId;
+
+    if (!isDoctor && !isPatient && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied. You are not a participant in this appointment.' });
+    }
+
     const session = await ConsultationSession.findOne({
       appointment: req.params.appointmentId
     })
       .populate('patient', 'name email phone')
       .populate('doctor', 'name email specialization');
 
-    if (!session) {
-      return res.json({ session: null });
-    }
-
-    const userId = req.user._id.toString();
-    if (
-      req.user.role !== 'admin' &&
-      session.doctor._id.toString() !== userId &&
-      session.patient._id.toString() !== userId
-    ) {
-      return res.status(403).json({ message: 'Access denied.' });
-    }
-
-    res.json({ session });
+    res.json({ session, isDoctor, isPatient, appointmentStatus: appointment.status });
   } catch (err) {
     console.error('Get session by appointment error:', err);
     res.status(500).json({ message: 'Server error fetching session.' });

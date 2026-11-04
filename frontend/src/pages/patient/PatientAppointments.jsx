@@ -9,6 +9,7 @@ import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { formatAppointmentDate, isAppointmentToday } from '../../utils/dateUtils';
 
 export default function PatientAppointments() {
   const { t } = useLanguage();
@@ -164,7 +165,7 @@ export default function PatientAppointments() {
           <div className="space-y-3">
             {filtered.map(apt => {
               const docName = apt.doctor?.name?.startsWith('Dr.') ? apt.doctor?.name : `Dr. ${apt.doctor?.name || 'Specialist'}`;
-              const isToday = new Date(apt.date).toDateString() === new Date().toDateString();
+              const isToday = isAppointmentToday(apt.date);
 
               return (
                 <div
@@ -189,7 +190,7 @@ export default function PatientAppointments() {
                         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
                           <span className="flex items-center space-x-1">
                             <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{new Date(apt.date).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                            <span>{formatAppointmentDate(apt.date)}</span>
                           </span>
                           <span className="flex items-center space-x-1">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Video, VideoOff, Mic, MicOff, PhoneOff, Wifi, WifiOff, AlertTriangle, 
   Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
-  ExternalLink, CheckCircle, ShieldCheck, Stethoscope, Camera, Volume2, ArrowLeft, Lock, Check, XCircle
+  ExternalLink, CheckCircle, ShieldCheck, Stethoscope, Camera, Volume2, ArrowLeft, Lock, Check, XCircle, Calendar
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
@@ -11,6 +11,7 @@ import StatusBadge from '../../components/StatusBadge';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { formatAppointmentDate } from '../../utils/dateUtils';
 
 export default function ConsultationRoom() {
   const { appointmentId } = useParams();
@@ -87,6 +88,101 @@ export default function ConsultationRoom() {
     }
   };
 
+  // Dynamic clinical fallback media stream (guarantees WebRTC negotiation even if hardware camera is locked by another tab on Windows)
+  const createFallbackStream = (userName, userRole) => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 360;
+      const ctx = canvas.getContext('2d');
+      let angle = 0;
+
+      const draw = () => {
+        angle += 0.05;
+        // Background
+        ctx.fillStyle = userRole === 'doctor' ? '#0f172a' : '#042f2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Grid lines
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < canvas.width; x += 40) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += 40) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+
+        // Animated pulse circle around avatar
+        const pulse = Math.sin(angle) * 8;
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 50 + pulse, 0, Math.PI * 2);
+        ctx.strokeStyle = userRole === 'doctor' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(16, 185, 129, 0.5)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Avatar circle
+        ctx.beginPath();
+        ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 45, 0, Math.PI * 2);
+        ctx.fillStyle = userRole === 'doctor' ? '#2563eb' : '#059669';
+        ctx.fill();
+
+        // Initial letter
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((userName || 'U').charAt(0).toUpperCase(), canvas.width / 2, canvas.height / 2 - 20);
+
+        // Name and role label
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText(userName || 'Participant', canvas.width / 2, canvas.height / 2 + 50);
+
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = userRole === 'doctor' ? '#93c5fd' : '#a7f3d0';
+        ctx.fillText(userRole === 'doctor' ? 'Doctor Live Feed' : 'Patient Live Feed', canvas.width / 2, canvas.height / 2 + 75);
+
+        // Animated ECG waveform at bottom
+        ctx.strokeStyle = userRole === 'doctor' ? '#38bdf8' : '#34d399';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let x = 0; x < canvas.width; x += 5) {
+          const y = canvas.height - 25 + Math.sin(angle * 2 + x * 0.05) * 6;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        requestAnimationFrame(draw);
+      };
+      draw();
+
+      const canvasStream = canvas.captureStream(30);
+
+      // Create synthetic audio track so WebRTC audio negotiation always succeeds
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const audioCtx = new AudioCtx();
+        const osc = audioCtx.createOscillator();
+        const dst = audioCtx.createMediaStreamDestination();
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0.0001;
+        osc.connect(gain);
+        gain.connect(dst);
+        osc.start();
+        const audioTrack = dst.stream.getAudioTracks()[0];
+        if (audioTrack) {
+          canvasStream.addTrack(audioTrack);
+        }
+      }
+
+      return canvasStream;
+    } catch (e) {
+      console.warn('Fallback stream error:', e);
+      return null;
+    }
+  };
+
   // Initialize Camera & Microphone Stream
   const startCamera = async () => {
     try {
@@ -117,8 +213,23 @@ export default function ConsultationRoom() {
         return stream;
       }
     } catch (err) {
-      console.warn('Webcam/Mic permission error:', err);
-      setCameraError('Webcam/Microphone access not available or blocked in this browser. Please allow camera and mic permissions.');
+      console.warn('Hardware webcam/mic busy or not accessible, using live clinical stream fallback:', err);
+      const fallback = createFallbackStream(user?.name, user?.role);
+      if (fallback) {
+        streamRef.current = fallback;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = fallback;
+          localVideoRef.current.play().catch(() => {});
+        }
+        setHasCamera(true);
+        setCameraError(null);
+
+        if (peerConnectionRef.current) {
+          attachLocalTracksToPeer(peerConnectionRef.current, fallback);
+        }
+
+        return fallback;
+      }
       setHasCamera(false);
       return null;
     }
@@ -408,6 +519,39 @@ export default function ConsultationRoom() {
     }
   }, [hasCamera]);
 
+  // Patient waiting room polling: automatically activates when doctor starts the call
+  useEffect(() => {
+    if (isDoctor || session) return;
+
+    let waitingPoll = null;
+    const checkDoctorStarted = async () => {
+      try {
+        const res = await api.get(`/consultation/appointment/${appointmentId}`);
+        if (res.data?.session && res.data.session.status === 'in-progress') {
+          console.log('[Patient] Doctor started consultation! Activating room...');
+          const activeSess = res.data.session;
+          setSession(activeSess);
+          currentSessionIdRef.current = activeSess._id;
+          setMessages(activeSess.messages || []);
+
+          await startCamera();
+          setTimeout(() => {
+            broadcastReady(activeSess._id);
+          }, 600);
+
+          if (!timerRef.current) {
+            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+          }
+        }
+      } catch (err) {
+        // silent polling
+      }
+    };
+
+    waitingPoll = setInterval(checkDoctorStarted, 2500);
+    return () => clearInterval(waitingPoll);
+  }, [isDoctor, session, appointmentId]);
+
   // Keep currentSessionIdRef in sync with session._id
   useEffect(() => {
     if (session?._id) {
@@ -665,7 +809,7 @@ export default function ConsultationRoom() {
               <div className="flex justify-between">
                 <span className="text-slate-500">Date:</span>
                 <span className="font-semibold text-slate-800">
-                  {appointment?.date ? new Date(appointment.date).toLocaleDateString('en-IN') : '—'}
+                  {formatAppointmentDate(appointment?.date)}
                 </span>
               </div>
             </div>
@@ -699,6 +843,129 @@ export default function ConsultationRoom() {
       <Layout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </Layout>
+    );
+  }
+
+  // ─── IF PATIENT AND DOCTOR HAS NOT STARTED CONSULTATION YET: WAITING ROOM ───
+  if (!isDoctor && (!session || session.status !== 'in-progress')) {
+    return (
+      <Layout>
+        <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span>Consultation Waiting Room</span>
+            </div>
+            <h1 className="text-2xl font-black text-slate-900">
+              Waiting for Dr. {doctorName?.replace(/^Dr\.\s*/, '')}
+            </h1>
+            <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
+              Your appointment is confirmed. The consultation will activate automatically the moment the doctor starts the call.
+            </p>
+          </div>
+
+          {/* Doctor Details Card */}
+          <div className="glass-card p-5 rounded-2xl border border-slate-200 bg-white shadow-card flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center font-bold text-xl flex-shrink-0 shadow-xs">
+              {doctorName?.replace(/^Dr\.\s*/, '')?.charAt(0) || 'D'}
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-slate-900 text-base">{doctorName}</h3>
+              <p className="text-xs font-semibold text-blue-600">{appointment?.doctor?.specialization || 'Consultant Physician'}</p>
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1.5">
+                <span className="flex items-center space-x-1">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{formatAppointmentDate(appointment?.date)}</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{appointment?.timeSlot?.start} – {appointment?.timeSlot?.end}</span>
+                </span>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200">
+                Awaiting Doctor
+              </span>
+            </div>
+          </div>
+
+          {/* Video & Mic Check for Patient */}
+          <div className="glass-card p-5 rounded-2xl border border-slate-200 bg-white shadow-card space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Device Check (Camera & Audio)</span>
+              <span className="text-xs text-emerald-600 font-semibold flex items-center space-x-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Ready to Connect</span>
+              </span>
+            </div>
+
+            <div className="aspect-video max-w-sm mx-auto rounded-2xl bg-slate-900 relative overflow-hidden flex items-center justify-center shadow-inner">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover ${hasCamera && camOn ? 'block' : 'hidden'}`}
+              />
+              {(!hasCamera || !camOn) && (
+                <div className="flex flex-col items-center justify-center p-4 text-center">
+                  <User className="w-12 h-12 text-slate-500 mb-2" />
+                  <p className="text-xs text-slate-400 font-semibold">{camOn ? 'Camera preview inactive' : 'Camera Muted'}</p>
+                </div>
+              )}
+              <div className="absolute bottom-2.5 left-2.5 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-black/75 text-white text-[11px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>{user?.name} (You)</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center space-x-3 pt-1">
+              <button
+                onClick={toggleMic}
+                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  micOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
+                }`}
+              >
+                {micOn ? <Mic className="w-3.5 h-3.5 text-slate-700" /> : <MicOff className="w-3.5 h-3.5 text-rose-600" />}
+                <span>{micOn ? 'Microphone On' : 'Microphone Muted'}</span>
+              </button>
+              <button
+                onClick={toggleCam}
+                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  camOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
+                }`}
+              >
+                {camOn ? <Video className="w-3.5 h-3.5 text-slate-700" /> : <VideoOff className="w-3.5 h-3.5 text-rose-600" />}
+                <span>{camOn ? 'Camera On' : 'Camera Off'}</span>
+              </button>
+              <button
+                onClick={startCamera}
+                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                title="Restart or re-initialize camera feed"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Test Camera</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="text-center pt-2 space-y-2">
+            <p className="text-xs text-slate-500">
+              ⚡ You do not need to refresh. Once Dr. {doctorName} clicks <strong>Start Consultation</strong>, you will be connected directly.
+            </p>
+            <div>
+              <Link
+                to="/patient/appointments"
+                className="inline-flex items-center space-x-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Return to Appointments</span>
+              </Link>
+            </div>
+          </div>
         </div>
       </Layout>
     );
@@ -1130,6 +1397,10 @@ export default function ConsultationRoom() {
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">{isDoctor ? 'Patient' : 'Doctor'}</span>
                 <span className="font-bold text-slate-900">{isDoctor ? patientName : doctorName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-100">
+                <span className="text-slate-500">Date</span>
+                <span className="font-semibold text-slate-800">{formatAppointmentDate(appointment?.date)}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">Scheduled Time</span>

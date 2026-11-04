@@ -21,12 +21,22 @@ router.post('/', auth, patientOnly, async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found or inactive.' });
     }
 
-    // Check for double-booking
-    const appointmentDate = new Date(date);
-    const startOfDay = new Date(appointmentDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(appointmentDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Parse date cleanly at UTC midday so timezone offsets never change the calendar day
+    let appointmentDate;
+    let startOfDay;
+    let endOfDay;
+    if (typeof date === 'string' && date.includes('-')) {
+      const parts = date.split('T')[0].split('-').map(Number);
+      appointmentDate = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
+      startOfDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 0, 0, 0));
+      endOfDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999));
+    } else {
+      appointmentDate = new Date(date);
+      startOfDay = new Date(appointmentDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      endOfDay = new Date(appointmentDate);
+      endOfDay.setHours(23, 59, 59, 999);
+    }
 
     const existingAppointment = await Appointment.findOne({
       doctor,
