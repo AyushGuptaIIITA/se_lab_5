@@ -114,15 +114,23 @@ export default function MedicalRecords() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+
+  // Auto-fill: from = 1 year ago, to = today — user can change freely
+  const todayStr = new Date().toISOString().split('T')[0];
+  const oneYearAgoStr = (() => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const [fromDate, setFromDate] = useState(oneYearAgoStr);
+  const [toDate, setToDate] = useState(todayStr);
 
   useEffect(() => {
     const fetch = async () => {
       setLoading(true);
       try {
         const res = await api.get('/medical-records');
-        setRecords(res.data.records || []);
+        // Backend returns { appointments, prescriptions } — use appointments as records
+        setRecords(res.data.appointments || []);
       } catch (err) {
         setAlert({ type: 'error', message: 'Failed to load medical records.' });
       } finally { setLoading(false); }
@@ -131,8 +139,16 @@ export default function MedicalRecords() {
   }, []);
 
   const filtered = records.filter(r => {
-    if (fromDate && new Date(r.date) < new Date(fromDate)) return false;
-    if (toDate && new Date(r.date) > new Date(toDate)) return false;
+    const rDate = new Date(r.date);
+    rDate.setHours(0, 0, 0, 0);
+    if (fromDate) {
+      const from = new Date(fromDate); from.setHours(0, 0, 0, 0);
+      if (rDate < from) return false;
+    }
+    if (toDate) {
+      const to = new Date(toDate); to.setHours(23, 59, 59, 999);
+      if (rDate > to) return false;
+    }
     return true;
   });
 
@@ -148,20 +164,36 @@ export default function MedicalRecords() {
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">Permanent immutable log of clinical consultations and verified prescriptions</p>
           </div>
-          <div className="flex items-center space-x-2 text-xs">
-            <input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="glass-input px-3 py-1.5 rounded-lg text-xs bg-white"
-            />
-            <span className="text-gray-400">–</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="glass-input px-3 py-1.5 rounded-lg text-xs bg-white"
-            />
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-semibold">From</span>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => setFromDate(e.target.value)}
+                className="px-3 py-1.5 rounded-lg text-xs bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <span className="text-slate-400 font-bold">→</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500 font-semibold">To</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => setToDate(e.target.value)}
+                className="px-3 py-1.5 rounded-lg text-xs bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => { setFromDate(oneYearAgoStr); setToDate(todayStr); }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+            >Reset</button>
+            <button
+              type="button"
+              onClick={() => { setFromDate(''); setToDate(''); }}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors"
+            >All Time</button>
           </div>
         </div>
 

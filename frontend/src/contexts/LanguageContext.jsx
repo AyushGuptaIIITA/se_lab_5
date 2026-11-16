@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import en from '../translations/en';
 import hi from '../translations/hi';
 import { SUPPORTED_LANGUAGES, PHRASE_DICTIONARY, translatePhrase } from '../translations/indianLanguages';
@@ -6,8 +6,17 @@ import { SUPPORTED_LANGUAGES, PHRASE_DICTIONARY, translatePhrase } from '../tran
 const baseTranslations = { en, hi };
 const LanguageContext = createContext(null);
 
+// Map language codes to Intl locale strings for date/number formatting
+const LOCALE_MAP = {
+  en: 'en-IN', hi: 'hi-IN', bn: 'bn-IN', te: 'te-IN',
+  ta: 'ta-IN', mr: 'mr-IN', gu: 'gu-IN', kn: 'kn-IN',
+  ml: 'ml-IN', pa: 'pa-IN', or: 'or-IN'
+};
+
 export function LanguageProvider({ children }) {
   const [lang, setLangState] = useState(() => localStorage.getItem('lang') || 'en');
+  const observerRef = useRef(null);
+  const translationCacheRef = useRef({}); // cache translated text → original
 
   const setLang = useCallback((newLang) => {
     localStorage.setItem('lang', newLang);
@@ -15,58 +24,112 @@ export function LanguageProvider({ children }) {
     document.documentElement.lang = newLang;
   }, []);
 
+  // t() — translate a key or phrase
   const t = useCallback((keyOrPhrase) => {
     if (!keyOrPhrase) return '';
 
-    // 1. Direct translation key lookup
+    // 1. Direct translation key lookup (en.js / hi.js files)
     if (baseTranslations[lang]?.[keyOrPhrase]) {
       return baseTranslations[lang][keyOrPhrase];
     }
 
-    // 2. Phrase dictionary lookup (Hindi & all Indian languages)
+    // 2. Phrase dictionary (all Indian languages)
     const phraseMatch = PHRASE_DICTIONARY[keyOrPhrase];
-    if (phraseMatch && phraseMatch[lang]) {
+    if (phraseMatch?.[lang]) {
       return phraseMatch[lang];
     }
 
-    // 3. Fallback to English translation key
+    // 3. Fallback to English key
     if (baseTranslations.en?.[keyOrPhrase]) {
       return baseTranslations.en[keyOrPhrase];
     }
 
-    // 4. Return as-is
     return keyOrPhrase;
   }, [lang]);
 
-  // Global DOM localization observer: when an Indian language (like Hindi) is active,
-  // translate known buttons, links, and headings so the ENTIRE application converts.
-  useEffect(() => {
-    if (lang === 'en') return;
-
-    const translateDOMNodes = () => {
-      const elements = document.querySelectorAll('button, a, span, h1, h2, h3, h4, th, p');
-      elements.forEach(el => {
-        // Only target element if it has pure text and no complex children
-        if (el.children.length === 0 && el.textContent) {
-          const rawText = el.textContent.trim();
-          if (PHRASE_DICTIONARY[rawText]?.[lang]) {
-            el.textContent = PHRASE_DICTIONARY[rawText][lang];
-          }
-        }
-      });
-    };
-
-    translateDOMNodes();
-    const observer = new MutationObserver(() => {
-      translateDOMNodes();
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+  // formatDate() — locale-aware date formatting
+  const formatDate = useCallback((date, options = {}) => {
+    if (!date) return '';
+    const locale = LOCALE_MAP[lang] || 'en-IN';
+    const defaultOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+    return new Intl.DateTimeFormat(locale, { ...defaultOptions, ...options }).format(new Date(date));
   }, [lang]);
 
+  // ── DOM-level translation: walk all text nodes and translate known phrases ──
+  const applyDOMTranslations = useCallback(() => {
+    if (lang === 'en') return;
+
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const raw = node.textContent.trim();
+        if (raw.length < 2 || raw.length > 120) return; // skip too short/long
+        const translated = PHRASE_DICTIONARY[raw]?.[lang];
+        if (translated && node.textContent !== translated) {
+          node.textContent = translated;
+        }
+      } else if (
+        node.nodeType === Node.ELEMENT_NODE &&
+        !['SCRIPT', 'STYLE', 'INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)
+      ) {
+        // Don't translate placeholder/value attributes
+        node.childNodes.forEach(walk);
+      }
+    };
+
+    // Walk the main app content
+    const app = document.getElementById('root');
+    if (app) app.childNodes.forEach(walk);
+  }, [lang]);
+
+  // Set html lang attribute on mount + language change
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  // Apply DOM translations when lang changes (non-English)
+  useEffect(() => {
+    if (lang === 'en') {
+      // Disconnect observer when back to English (page refresh will restore)
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+      return;
+    }
+
+    // Run immediately
+    applyDOMTranslations();
+
+    // Then watch for DOM changes (React re-renders) and re-translate
+    if (observerRef.current) observerRef.current.disconnect();
+    const observer = new MutationObserver(() => {
+      applyDOMTranslations();
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: false,
+      attributes: false
+    });
+    observerRef.current = observer;
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, [lang, applyDOMTranslations]);
+
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t, supportedLanguages: SUPPORTED_LANGUAGES }}>
+    <LanguageContext.Provider value={{
+      lang,
+      setLang,
+      t,
+      formatDate,
+      locale: LOCALE_MAP[lang] || 'en-IN',
+      supportedLanguages: SUPPORTED_LANGUAGES
+    }}>
       {children}
     </LanguageContext.Provider>
   );

@@ -61,28 +61,35 @@ router.post('/start', auth, async (req, res) => {
     }
 
     // Check if a session already exists for this appointment
-    let session = await ConsultationSession.findOne({ appointment: appointmentId });
+    // Find most recent session for this appointment
+    let session = await ConsultationSession.findOne({ appointment: appointmentId }).sort({ createdAt: -1 });
     if (session) {
-      if (session.status === 'completed') {
-        return res.status(400).json({
-          message: 'This consultation session has ended. Rejoining completed meetings is not allowed.',
-          isCompleted: true,
+      // Terminal states: completed, ended, disconnected — allow doctor to start a new session
+      const terminalStates = ['completed', 'ended', 'disconnected'];
+      if (terminalStates.includes(session.status)) {
+        if (!isDoctor && req.user.role !== 'admin') {
+          return res.status(400).json({
+            message: 'This consultation session has ended. The doctor may start a new session.',
+            isCompleted: true,
+            session
+          });
+        }
+        // Doctor can start fresh — fall through to session creation below
+        session = null;
+      } else {
+        // Session is in-progress: allow seamless rejoin and log network event
+        session.networkEvents.push({
+          event: 'reconnected',
+          timestamp: new Date(),
+          details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} rejoined consultation call`
+        });
+        await session.save();
+
+        return res.json({
+          message: 'Reconnected to active consultation session.',
           session
         });
       }
-
-      // Session is in-progress: allow seamless rejoin and log network event
-      session.networkEvents.push({
-        event: 'reconnected',
-        timestamp: new Date(),
-        details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} rejoined consultation call`
-      });
-      await session.save();
-
-      return res.json({
-        message: 'Reconnected to active consultation session.',
-        session
-      });
     }
 
     // Only the assigned Doctor (or Admin) can initiate/activate a new consultation session

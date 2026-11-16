@@ -32,7 +32,7 @@ const consultationSessionSchema = new mongoose.Schema({
   doctor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   status: {
     type: String,
-    enum: ['waiting', 'in-progress', 'completed', 'disconnected'],
+    enum: ['waiting', 'in-progress', 'completed', 'disconnected', 'ended'],
     default: 'waiting'
   },
   startedAt: { type: Date },
