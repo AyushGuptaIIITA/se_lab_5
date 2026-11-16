@@ -29,6 +29,21 @@ io.on('connection', (socket) => {
     if (appointmentId) socket.join(`appt:${appointmentId}`);
   });
 
+  // WebRTC 1-on-1 P2P signaling relay (instant, unlimited duration)
+  socket.on('webrtc:signal', (payload) => {
+    const apptId = payload?.appointmentId;
+    if (apptId) {
+      socket.to(`appt:${apptId}`).emit('webrtc:signal', payload);
+    }
+  });
+
+  socket.on('webrtc:ready', (payload) => {
+    const apptId = payload?.appointmentId;
+    if (apptId) {
+      socket.to(`appt:${apptId}`).emit('webrtc:peer-ready', payload);
+    }
+  });
+
   socket.on('disconnect', () => {});
 });
 

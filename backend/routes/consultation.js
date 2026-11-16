@@ -469,6 +469,15 @@ router.post('/:sessionId/signal', auth, async (req, res) => {
       );
     }
 
+    try {
+      emit(req, 'consultation:signal', {
+        sessionId: session._id.toString(),
+        appointmentId: session.appointment.toString(),
+        signal: newSignal,
+        senderRole
+      });
+    } catch {}
+
     res.json({ success: true, message: 'Signal dispatched successfully.' });
   } catch (err) {
     console.error('WebRTC signal post error:', err);

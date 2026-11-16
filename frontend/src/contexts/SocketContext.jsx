@@ -95,8 +95,24 @@ export function SocketProvider({ children }) {
     };
   }, []);
 
+  /**
+   * Emit an event through socket
+   */
+  const emitEvent = useCallback((event, payload) => {
+    if (socketRef.current) {
+      socketRef.current.emit(event, payload);
+    }
+  }, []);
+
   return (
-    <SocketContext.Provider value={{ socket: socketRef, connected, subscribe, joinAppointmentRoom }}>
+    <SocketContext.Provider value={{ 
+      socket: socketRef.current, 
+      socketRef, 
+      connected, 
+      subscribe, 
+      joinAppointmentRoom,
+      emit: emitEvent 
+    }}>
       {children}
     </SocketContext.Provider>
   );

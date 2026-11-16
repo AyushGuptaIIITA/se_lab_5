@@ -4,7 +4,8 @@ import {
   Video, VideoOff, Mic, MicOff, PhoneOff, AlertTriangle, 
   Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
   ExternalLink, CheckCircle, ArrowLeft, XCircle, Calendar,
-  Brain, TrendingUp, AlertCircle, Zap, Radio, Square, Activity
+  Brain, TrendingUp, AlertCircle, Zap, Radio, Square, Activity,
+  ScreenShare, ShieldCheck, Sparkles
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
@@ -19,7 +20,7 @@ export default function ConsultationRoom() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
-  const { subscribe, joinAppointmentRoom } = useSocket();
+  const { subscribe, joinAppointmentRoom, emit } = useSocket();
 
   const isDoctor = user?.role === 'doctor';
 
@@ -30,9 +31,18 @@ export default function ConsultationRoom() {
   const [ending, setEnding] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  const [peerConnected, setPeerConnected] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [notes, setNotes] = useState('');
   const [alert, setAlert] = useState(null);
   const [elapsed, setElapsed] = useState(0);
+
+  // WebRTC native stream & connection refs
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const iceQueueRef = useRef([]);
   const [activeTab, setActiveTab] = useState('chat');
 
   // Chat state
@@ -56,9 +66,6 @@ export default function ConsultationRoom() {
   const autoAnalyzeTimerRef = useRef(null);
   const fullTranscriptRef = useRef('');                           // ref so callbacks always have latest
 
-  // Jitsi state
-  const jitsiApiRef = useRef(null);
-  const jitsiMountedRef = useRef(false);
 
   const timerRef = useRef(null);
   const chatContainerRef = useRef(null);
@@ -68,204 +75,205 @@ export default function ConsultationRoom() {
   // Keep sessionRef in sync
   useEffect(() => { sessionRef.current = session; }, [session]);
 
-  // ─── Load Jitsi Script ──────────────────────────────────────────────────────
-  const loadJitsiScript = () => {
-    return new Promise((resolve) => {
-      if (window.JitsiMeetExternalAPI) { resolve(true); return; }
-      const existing = document.getElementById('jitsi-external-api-script');
-      if (existing) {
-        const wait = setInterval(() => {
-          if (window.JitsiMeetExternalAPI) { clearInterval(wait); resolve(true); }
-        }, 100);
-        return;
-      }
-      const script = document.createElement('script');
-      script.id = 'jitsi-external-api-script';
-      script.src = 'https://meet.jit.si/external_api.js';
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
+  // ─── Native WebRTC Video Engine (Unlimited Session Duration - up to 1+ hour) ───
+  const sendSignal = useCallback(async (sig) => {
+    emit('webrtc:signal', {
+      appointmentId,
+      sessionId: sessionRef.current?._id,
+      signal: sig,
+      senderRole: isDoctor ? 'doctor' : 'patient'
     });
-  };
 
-  // ─── Mount Jitsi (Two-way video — Jitsi handles BOTH cameras internally) ──
-  const mountJitsi = useCallback(async (targetSession) => {
-    if (jitsiMountedRef.current) return;
-
-    const sess = targetSession || sessionRef.current;
-    if (!sess || sess.status !== 'in-progress') return;
-
-    const loaded = await loadJitsiScript();
-    if (!loaded || !window.JitsiMeetExternalAPI) {
-      setAlert({ type: 'error', message: 'Failed to load video engine. Please check your internet connection.' });
-      return;
+    if (sessionRef.current?._id) {
+      try {
+        await api.post(`/consultation/${sessionRef.current._id}/signal`, {
+          type: sig.type,
+          data: sig.data
+        });
+      } catch {}
     }
+  }, [appointmentId, isDoctor, emit]);
 
-    const container = document.getElementById('jitsi-video-container');
-    if (!container) return;
-
-    // Dispose any stale instance
-    if (jitsiApiRef.current) {
-      try { jitsiApiRef.current.dispose(); } catch {}
-      jitsiApiRef.current = null;
-    }
-
-    container.innerHTML = '';
-
-    // Unique room — lowercase alphanumeric only (Jitsi requirement), same for doctor + patient
-    const roomName = ('telemed' + appointmentId).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const handleIncomingSignal = useCallback(async (sig) => {
+    const pc = peerConnectionRef.current;
+    if (!pc || !sig) return;
 
     try {
-      const jApi = new window.JitsiMeetExternalAPI('meet.jit.si', {
-        roomName,
-        width: '100%',
-        height: '100%',
-        parentNode: container,
-        userInfo: {
-          displayName: isDoctor
-            ? (user?.name?.startsWith('Dr.') ? user.name : 'Dr. ' + user?.name)
-            : (user?.name || 'Patient'),
-          email: user?.email || ''
-        },
-        configOverwrite: {
-          startWithAudioMuted: false,
-          startWithVideoMuted: false,
-          prejoinPageEnabled: false,
-          prejoinConfig: { enabled: false },
-          lobby: { autoKnock: false, enableChat: false },
-          defaultLocalDisplayName: isDoctor ? 'Doctor' : 'Patient',
-          disableDeepLinking: true,
-          enableClosePage: false,
-          resolution: 720,
-          constraints: {
-            video: { height: { ideal: 720, max: 720, min: 240 } }
-          },
-          tileView: { numberOfVisibleTiles: 2 },
-          filmstrip: { disableResizable: false },
-          enableNoAudioDetection: true,
-          enableNoisyMicDetection: true,
-          disableRemoteMute: false,
-          // Reliable STUN servers to fix connection issues
-          p2p: { enabled: true, stunServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-          ]},
-          useStunTurn: true,
-        },
-        interfaceConfigOverwrite: {
-          SHOW_JITSI_WATERMARK: false,
-          SHOW_WATERMARK_FOR_GUESTS: false,
-          SHOW_BRAND_WATERMARK: false,
-          SHOW_POWERED_BY: false,
-          BRAND_WATERMARK_LINK: '',
-          // Show only essential toolbar buttons
-          TOOLBAR_BUTTONS: [
-            'camera',
-            'microphone',
-            'tileview',
-            'hangup',
-            'chat',
-            'settings',
-            'desktop',
-            'fullscreen'
-          ],
-          // Show tile view by default so both cameras are visible side-by-side
-          INITIAL_TOOLBAR_TIMEOUT: 20000,
-          TOOLBAR_ALWAYS_VISIBLE: false,
-          DEFAULT_BACKGROUND: '#1e293b',
-          DEFAULT_REMOTE_DISPLAY_NAME: isDoctor ? 'Patient' : 'Doctor',
-          APP_NAME: 'TeleMed Consultation',
-          NATIVE_APP_NAME: 'TeleMed',
-          LANG_DETECTION: false,
-          CONNECTION_INDICATOR_DISABLED: false,
-          VIDEO_QUALITY_LABEL_DISABLED: false,
+      if (sig.type === 'offer' && !isDoctor) {
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+        while (iceQueueRef.current.length > 0) {
+          const candidate = iceQueueRef.current.shift();
+          try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
         }
-      });
-
-      jitsiApiRef.current = jApi;
-      jitsiMountedRef.current = true;
-
-      // Auto-enable tile view after mount to show both cameras side-by-side
-      jApi.addEventListener('videoConferenceJoined', () => {
-        setTimeout(() => {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal({ type: 'answer', data: answer });
+      } else if (sig.type === 'answer' && isDoctor) {
+        if (pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+          while (iceQueueRef.current.length > 0) {
+            const candidate = iceQueueRef.current.shift();
+            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+          }
+        }
+      } else if (sig.type === 'candidate' && sig.data) {
+        if (pc.remoteDescription && pc.remoteDescription.type) {
           try {
-            jApi.executeCommand('setTileView', true);
+            await pc.addIceCandidate(new RTCIceCandidate(sig.data));
           } catch {}
-        }, 1500);
-      });
-
-      // Handle connection failure — show retry alert
-      jApi.addEventListener('connectionFailed', () => {
-        setAlert({
-          type: 'error',
-          message: 'Video connection failed. This may be a network/firewall issue. Click "Reconnect Video" to retry.'
-        });
-      });
-
-      // Handle call hangup by doctor or patient
-      const handleHangup = () => {
-        if (isDoctor) {
-          markAsCompleted();
         } else {
-          stopJitsi();
-          navigate('/patient/appointments');
+          iceQueueRef.current.push(sig.data);
+        }
+      }
+    } catch (err) {
+      console.warn('WebRTC signal handling warning:', err);
+    }
+  }, [isDoctor, sendSignal]);
+
+  const stopNativeCall = useCallback(() => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      try { peerConnectionRef.current.close(); } catch {}
+      peerConnectionRef.current = null;
+    }
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    setPeerConnected(false);
+    setIsScreenSharing(false);
+  }, []);
+
+  const startNativeCall = useCallback(async () => {
+    try {
+      stopNativeCall();
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' }
+        ]
+      });
+      peerConnectionRef.current = pc;
+
+      // Add local media tracks
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+      // Handle remote incoming stream
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+          }
+          setPeerConnected(true);
         }
       };
 
-      jApi.addEventListener('readyToClose', handleHangup);
-      jApi.addEventListener('videoConferenceLeft', handleHangup);
-
-      // Patient: if doctor leaves the meeting, immediately end call and redirect
-      jApi.addEventListener('participantLeft', () => {
-        if (!isDoctor) {
-          setAlert({ type: 'info', message: 'The doctor has ended the video consultation.' });
-          setTimeout(() => {
-            stopJitsi();
-            navigate('/patient/appointments');
-          }, 1200);
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal({ type: 'candidate', data: event.candidate });
         }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') {
+          setPeerConnected(true);
+        } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+          setPeerConnected(false);
+        }
+      };
+
+      // Broadcast readiness
+      emit('webrtc:ready', {
+        appointmentId,
+        senderRole: isDoctor ? 'doctor' : 'patient'
       });
 
-    } catch (e) {
-      console.error('Jitsi mount error:', e);
-      setAlert({ type: 'error', message: 'Video engine failed to start. Please refresh the page.' });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appointmentId, isDoctor, user]);
+      // Doctor initiates the offer
+      if (isDoctor) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ type: 'offer', data: offer });
+      }
 
-  // ─── Dispose Jitsi ─────────────────────────────────────────────────────────
-  const stopJitsi = () => {
-    if (jitsiApiRef.current) {
-      try { jitsiApiRef.current.dispose(); } catch {}
-      jitsiApiRef.current = null;
-      jitsiMountedRef.current = false;
+    } catch (err) {
+      console.error('WebRTC start error:', err);
+      setAlert({
+        type: 'error',
+        message: 'Camera or microphone not available: ' + (err.message || 'Please grant browser permissions.')
+      });
     }
-  };
+  }, [appointmentId, isDoctor, emit, sendSignal, stopNativeCall]);
 
-  // ─── Toggle mic via Jitsi API ──────────────────────────────────────────────
   const toggleMic = () => {
-    if (jitsiApiRef.current) {
-      jitsiApiRef.current.executeCommand('toggleAudio');
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setMicOn(audioTrack.enabled);
+      }
     }
-    setMicOn(prev => !prev);
   };
 
-  // ─── Toggle cam via Jitsi API ──────────────────────────────────────────────
   const toggleCam = () => {
-    if (jitsiApiRef.current) {
-      jitsiApiRef.current.executeCommand('toggleVideo');
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setCamOn(videoTrack.enabled);
+      }
     }
-    setCamOn(prev => !prev);
   };
 
-  // ─── Reload video (re-mount Jitsi) ────────────────────────────────────────
+  const toggleScreenShare = async () => {
+    if (!isScreenSharing) {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenTrack = screenStream.getVideoTracks()[0];
+        const pc = peerConnectionRef.current;
+        if (pc) {
+          const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender) sender.replaceTrack(screenTrack);
+        }
+        if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
+
+        screenTrack.onended = () => {
+          const camTrack = localStreamRef.current?.getVideoTracks()[0];
+          const sender = peerConnectionRef.current?.getSenders().find(s => s.track && s.track.kind === 'video');
+          if (sender && camTrack) sender.replaceTrack(camTrack);
+          if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+          setIsScreenSharing(false);
+        };
+        setIsScreenSharing(true);
+      } catch (e) {
+        console.warn('Screen share canceled or failed:', e);
+      }
+    } else {
+      const camTrack = localStreamRef.current?.getVideoTracks()[0];
+      const sender = peerConnectionRef.current?.getSenders().find(s => s.track && s.track.kind === 'video');
+      if (sender && camTrack) sender.replaceTrack(camTrack);
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+      setIsScreenSharing(false);
+    }
+  };
+
   const handleReconnect = () => {
-    jitsiMountedRef.current = false;
-    stopJitsi();
-    setTimeout(() => mountJitsi(sessionRef.current), 500);
-    setAlert({ type: 'info', message: 'Reconnecting video call...' });
+    setAlert({ type: 'info', message: 'Reconnecting HD Video stream...' });
+    startNativeCall();
     setTimeout(() => setAlert(null), 3000);
   };
 
@@ -485,19 +493,59 @@ export default function ConsultationRoom() {
 
     return () => {
       mounted = false;
-      stopJitsi();
+      stopNativeCall();
       clearInterval(timerRef.current);
       clearInterval(pollingRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointmentId]);
 
-  // ─── Mount Jitsi when session becomes in-progress ─────────────────────────
+  // ─── Start Native WebRTC call when session becomes in-progress ─────────────
   useEffect(() => {
-    if (session?.status === 'in-progress' && !jitsiMountedRef.current) {
-      const t = setTimeout(() => mountJitsi(session), 500);
-      return () => clearTimeout(t);
-    }
+    if (session?.status !== 'in-progress') return;
+
+    const t = setTimeout(() => startNativeCall(), 400);
+
+    // Socket: listen for incoming WebRTC signals
+    const unsubSignal = subscribe('webrtc:signal', (payload) => {
+      const myRole = isDoctor ? 'doctor' : 'patient';
+      if (payload?.senderRole && payload.senderRole !== myRole) {
+        handleIncomingSignal(payload.signal);
+      }
+    });
+
+    // Socket: listen when peer announces ready
+    const unsubReady = subscribe('webrtc:peer-ready', async (payload) => {
+      const myRole = isDoctor ? 'doctor' : 'patient';
+      if (payload?.senderRole && payload.senderRole !== myRole && isDoctor && peerConnectionRef.current) {
+        const pc = peerConnectionRef.current;
+        try {
+          const offer = await pc.createOffer({ iceRestart: true });
+          await pc.setLocalDescription(offer);
+          sendSignal({ type: 'offer', data: offer });
+        } catch {}
+      }
+    });
+
+    // Fallback polling for signals every 2.5 seconds
+    const signalPoll = setInterval(async () => {
+      if (!sessionRef.current?._id) return;
+      try {
+        const res = await api.get(`/consultation/${sessionRef.current._id}/signals`);
+        const signals = res.data?.signals || [];
+        for (const s of signals) {
+          handleIncomingSignal(s);
+        }
+      } catch {}
+    }, 2500);
+
+    return () => {
+      clearTimeout(t);
+      unsubSignal();
+      unsubReady();
+      clearInterval(signalPoll);
+      stopNativeCall();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, session?._id]);
 
@@ -557,7 +605,7 @@ export default function ConsultationRoom() {
     // Socket: consultation ended (patient side) — navigate patient away immediately
     const unsubEnd = subscribe('consultation:ended', (data) => {
       if (data?.appointmentId !== appointmentId) return;
-      stopJitsi();
+      stopNativeCall();
       clearInterval(timerRef.current);
       clearInterval(pollingRef.current);
       if (!isDoctor) {
@@ -574,7 +622,7 @@ export default function ConsultationRoom() {
         const res = await api.get(`/consultation/${session._id}`);
         if (res.data?.session?.messages) setMessages(res.data.session.messages);
         if (['completed', 'ended'].includes(res.data?.session?.status)) {
-          stopJitsi();
+          stopNativeCall();
           clearInterval(timerRef.current);
           if (!isDoctor) {
             navigate('/patient/appointments');
@@ -611,8 +659,8 @@ export default function ConsultationRoom() {
       sessionRef.current = sess;
       setMessages(sess.messages || []);
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-      setAlert({ type: 'success', message: 'Live consultation started. Video connecting...' });
-      setTimeout(() => mountJitsi(sess), 400);
+      setAlert({ type: 'success', message: 'Live consultation started. HD Video connecting...' });
+      setTimeout(() => startNativeCall(), 400);
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to start consultation.' });
     } finally {
@@ -657,7 +705,7 @@ export default function ConsultationRoom() {
       }
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'completed' });
       clearInterval(timerRef.current);
-      stopJitsi();
+      stopNativeCall();
       stopSpeechRecognition();
       // Don't auto-navigate to prescription — stay on completed screen so doctor can choose
       // whether to write a prescription or go back to appointments.
@@ -685,7 +733,7 @@ export default function ConsultationRoom() {
       }
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'incomplete' });
       clearInterval(timerRef.current);
-      stopJitsi();
+      stopNativeCall();
       stopSpeechRecognition();
       navigate('/doctor/appointments');
     } catch (err) {
@@ -961,18 +1009,86 @@ export default function ConsultationRoom() {
           {/* ── Left 2/3: Video + Controls ── */}
           <div className="lg:col-span-2 space-y-4">
 
-            {/* Jitsi Video Container — Jitsi renders BOTH cameras side-by-side automatically */}
-            <div className="w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl relative" style={{ height: '520px' }}>
-              <div id="jitsi-video-container" className="w-full h-full" />
+            {/* Native TeleMed WebRTC Video Viewport (Unlimited Session Duration - Max 1+ Hr) */}
+            <div className="w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl relative flex items-center justify-center" style={{ height: '520px' }}>
+              {/* Remote Video (Full Size) */}
+              <video
+                ref={remoteVideoRef}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-cover transition-opacity duration-300 ${peerConnected ? 'opacity-100' : 'opacity-0'}`}
+              />
 
-              {/* Overlay hint for first-timers */}
-              {jitsiMountedRef.current === false && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-3">
-                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                  <p className="text-sm font-semibold">Connecting video call...</p>
-                  <p className="text-xs text-slate-500">Both cameras will appear side-by-side once connected</p>
+              {/* Waiting for peer overlay */}
+              {!peerConnected && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 p-6 text-center space-y-4">
+                  <div className="w-20 h-20 rounded-3xl bg-blue-600/10 border-2 border-blue-500/30 flex items-center justify-center text-blue-400 font-black text-2xl shadow-xl shadow-blue-500/10 animate-pulse">
+                    {(isDoctor ? patientName : doctorName)?.replace(/^Dr\.\s*/, '')?.charAt(0) || 'U'}
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-bold text-white">
+                      {isDoctor ? patientName : doctorName}
+                    </h3>
+                    <p className="text-xs text-blue-400 font-semibold flex items-center justify-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+                      <span>{isDoctor ? 'Waiting for patient to connect audio/video...' : 'Waiting for doctor to connect audio/video...'}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-[11px] text-slate-400">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>TeleMed Direct HD WebRTC · Unlimited Duration (Full 1 hr)</span>
+                  </div>
                 </div>
               )}
+
+              {/* Floating Local Video Picture-in-Picture */}
+              <div className="absolute bottom-4 right-4 w-44 h-32 rounded-2xl overflow-hidden shadow-2xl border-2 border-white/30 bg-slate-900 z-10 transition-transform hover:scale-105">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${camOn ? 'block' : 'hidden'}`}
+                />
+                {!camOn && (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-slate-400">
+                    <VideoOff className="w-6 h-6 text-slate-500" />
+                    <span className="text-[10px] font-bold mt-1">Camera Off</span>
+                  </div>
+                )}
+                <div className="absolute bottom-1.5 left-2 px-2 py-0.5 rounded-md bg-black/70 text-white text-[10px] font-bold">
+                  You ({isDoctor ? 'Doctor' : 'Patient'}) {!micOn && ' 🔇'}
+                </div>
+              </div>
+
+              {/* Top Left Session Info Badge */}
+              <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+                <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white text-xs font-semibold border border-white/15">
+                  <span className={`w-2 h-2 rounded-full ${peerConnected ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`} />
+                  <span>{peerConnected ? 'HD Live Stream' : 'Connecting'}</span>
+                </div>
+                <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-emerald-400 text-xs font-mono font-bold border border-white/15">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{formatTime(elapsed)}</span>
+                </div>
+              </div>
+
+              {/* Top Right Dedicated Window Launcher (Jitsi Backup) */}
+              <div className="absolute top-4 right-4 z-10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const roomName = ('telemed' + appointmentId).toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const dName = isDoctor ? doctorName : patientName;
+                    window.open(`https://meet.jit.si/${roomName}#userInfo.displayName="${encodeURIComponent(dName)}"`, '_blank');
+                  }}
+                  className="flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-black/60 backdrop-blur-md text-white/90 hover:text-white text-[11px] font-bold border border-white/15 hover:bg-black/80 transition-all shadow-sm"
+                  title="Open external Jitsi window in new tab (unrestricted, no 5-min embed cap)"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Open Dedicated Window</span>
+                </button>
+              </div>
             </div>
 
             {/* Video Controls */}
@@ -983,21 +1099,28 @@ export default function ConsultationRoom() {
                   className={`p-2.5 rounded-xl font-semibold transition-all ${micOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}
                   title={micOn ? 'Mute' : 'Unmute'}
                 >
-                  {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                  {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4 text-rose-600" />}
                 </button>
                 <button
                   onClick={toggleCam}
                   className={`p-2.5 rounded-xl font-semibold transition-all ${camOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}
                   title={camOn ? 'Turn Off Camera' : 'Turn On Camera'}
                 >
-                  {camOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                  {camOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4 text-rose-600" />}
+                </button>
+                <button
+                  onClick={toggleScreenShare}
+                  className={`p-2.5 rounded-xl font-semibold transition-all ${isScreenSharing ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                  title={isScreenSharing ? 'Stop Screen Share' : 'Share Screen'}
+                >
+                  <ScreenShare className="w-4 h-4" />
                 </button>
                 <button
                   onClick={handleReconnect}
                   className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
-                  title="Reload video connection"
+                  title="Reconnect HD video connection"
                 >
-                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" /><span>Reload Video</span>
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" /><span>Reconnect Video</span>
                 </button>
                 {/* Live Speech Recognition toggle — doctor only */}
                 {isDoctor && speechSupported && (
@@ -1048,7 +1171,7 @@ export default function ConsultationRoom() {
                   </>
                 ) : (
                   <button
-                    onClick={() => { stopJitsi(); navigate('/patient/dashboard'); }}
+                    onClick={() => { stopNativeCall(); navigate('/patient/dashboard'); }}
                     className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
                   >
                     <PhoneOff className="w-4 h-4 text-rose-600" /><span>Leave Call</span>
