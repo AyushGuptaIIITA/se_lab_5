@@ -32,25 +32,34 @@ export default function PatientDashboard() {
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/appointments?limit=20');
       setAppointments(res.data.appointments || []);
     } catch (err) {
-      setAlert({ type: 'error', message: 'Could not load appointments. Please check backend connection.' });
-    } finally { setLoading(false); }
+      if (!silent) setAlert({ type: 'error', message: 'Could not load appointments. Please check backend connection.' });
+    } finally { if (!silent) setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  // Real-time: refresh on appointment updates and prescription events
+  // Real-time: refresh on appointment updates and prescription events (socket + 3s poll)
   useEffect(() => {
-    const u1 = subscribe('appointment:updated',  () => fetchData());
-    const u2 = subscribe('consultation:started', () => fetchData());
-    const u3 = subscribe('consultation:ended',   () => fetchData());
-    const u4 = subscribe('prescription:new',     () => fetchData());
-    return () => { u1(); u2(); u3(); u4(); };
+    const u1 = subscribe('appointment:new',      () => fetchData(true));
+    const u2 = subscribe('appointment:updated',  () => fetchData(true));
+    const u3 = subscribe('consultation:started', () => fetchData(true));
+    const u4 = subscribe('consultation:ended',   () => fetchData(true));
+    const u5 = subscribe('prescription:new',     () => fetchData(true));
+
+    const poll = setInterval(() => {
+      fetchData(true);
+    }, 3000);
+
+    return () => {
+      u1(); u2(); u3(); u4(); u5();
+      clearInterval(poll);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

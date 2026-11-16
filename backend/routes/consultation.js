@@ -26,8 +26,10 @@ router.post('/start', auth, async (req, res) => {
     }
 
     const userId = req.user._id.toString();
-    const isDoctor = appointment.doctor._id.toString() === userId;
-    const isPatient = appointment.patient._id.toString() === userId;
+    const docId = (appointment.doctor?._id || appointment.doctor)?.toString();
+    const patId = (appointment.patient?._id || appointment.patient)?.toString();
+    const isDoctor = docId === userId;
+    const isPatient = patId === userId;
 
     if (!isDoctor && !isPatient && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied. You are not a participant in this appointment.' });
@@ -62,28 +64,44 @@ router.post('/start', auth, async (req, res) => {
     }
 
     // Check if a session already exists for this appointment
-    // Find most recent session for this appointment
     let session = await ConsultationSession.findOne({ appointment: appointmentId }).sort({ createdAt: -1 });
     if (session) {
-      // Terminal states: completed, ended, disconnected — allow doctor to start a new session
       const terminalStates = ['completed', 'ended', 'disconnected'];
       if (terminalStates.includes(session.status)) {
         if (!isDoctor && req.user.role !== 'admin') {
+          // If the appointment is not completed (e.g. incomplete or confirmed), patient waits for doctor to resume
+          if (appointment.status !== 'completed') {
+            return res.status(403).json({
+              message: 'Waiting for the doctor to resume the consultation session. You will be automatically reconnected as soon as the doctor restarts.',
+              waitingForDoctor: true
+            });
+          }
           return res.status(400).json({
-            message: 'This consultation session has ended. The doctor may start a new session.',
+            message: 'This consultation has already been completed and concluded. Rejoining is not permitted.',
             isCompleted: true,
             session
           });
         }
-        // Doctor can start fresh — fall through to session creation below
-        session = null;
+        // Doctor is restarting/resuming consultation: reactivate the existing session to avoid duplicate index collisions
+        session.status = 'in-progress';
+        session.startedAt = session.startedAt || new Date();
+        session.endedAt = undefined;
+        if (!Array.isArray(session.networkEvents)) session.networkEvents = [];
+        session.networkEvents.push({
+          event: 'reconnected',
+          timestamp: new Date(),
+          details: `Doctor ${req.user.name} restarted/resumed consultation session`
+        });
+        await session.save();
       } else {
-        // Session is in-progress: allow seamless rejoin and log network event
+        // Session is already in-progress: allow seamless rejoin and log network event
+        if (!Array.isArray(session.networkEvents)) session.networkEvents = [];
         session.networkEvents.push({
           event: 'reconnected',
           timestamp: new Date(),
           details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} rejoined consultation call`
         });
+        session.status = 'in-progress';
         await session.save();
 
         return res.json({
@@ -91,31 +109,34 @@ router.post('/start', auth, async (req, res) => {
           session
         });
       }
-    }
+    } else {
+      // No session exists yet: Only doctor (or admin) can start a fresh consultation
+      if (!isDoctor && req.user.role !== 'admin') {
+        return res.status(403).json({
+          message: 'Waiting for the doctor to initiate the consultation. You will be automatically connected as soon as the doctor starts the call.',
+          waitingForDoctor: true
+        });
+      }
 
-    // Only the assigned Doctor (or Admin) can initiate/activate a new consultation session
-    if (!isDoctor && req.user.role !== 'admin') {
-      return res.status(403).json({
-        message: 'Waiting for the doctor to initiate the consultation. You will be automatically connected as soon as the doctor starts the call.',
-        waitingForDoctor: true
+      // Create new session
+      const patientId = appointment.patient?._id || appointment.patient;
+      const doctorId = appointment.doctor?._id || appointment.doctor;
+
+      session = new ConsultationSession({
+        appointment: appointmentId,
+        patient: patientId,
+        doctor: doctorId,
+        status: 'in-progress',
+        startedAt: new Date(),
+        networkEvents: [{
+          event: 'connected',
+          timestamp: new Date(),
+          details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} joined session`
+        }]
       });
+
+      await session.save();
     }
-
-    // Create session
-    session = new ConsultationSession({
-      appointment: appointmentId,
-      patient: appointment.patient._id,
-      doctor: appointment.doctor._id,
-      status: 'in-progress',
-      startedAt: new Date(),
-      networkEvents: [{
-        event: 'connected',
-        timestamp: new Date(),
-        details: `${req.user.role === 'doctor' ? 'Doctor' : 'Patient'} ${req.user.name} joined session`
-      }]
-    });
-
-    await session.save();
 
     // Update appointment status to in-progress if confirmed, pending, or incomplete (restart)
     if (['pending', 'confirmed', 'incomplete'].includes(appointment.status)) {
@@ -124,17 +145,21 @@ router.post('/start', auth, async (req, res) => {
       await appointment.save();
     }
 
-    // Create audit log
-    await createAuditLog(
-      'CONSULTATION_STARTED',
-      req.user._id,
-      req.user.role,
-      req.user.name,
-      'ConsultationSession',
-      session._id,
-      { appointmentId, participant: req.user.name, role: req.user.role },
-      req.ip
-    );
+    // Create audit log safely
+    try {
+      await createAuditLog(
+        'CONSULTATION_STARTED',
+        req.user._id,
+        req.user.role,
+        req.user.name,
+        'ConsultationSession',
+        session._id,
+        { appointmentId, participant: req.user.name, role: req.user.role },
+        req.ip
+      );
+    } catch (auditErr) {
+      console.warn('Audit log error:', auditErr.message);
+    }
 
     res.status(201).json({
       message: 'Consultation session started.',
@@ -142,15 +167,27 @@ router.post('/start', auth, async (req, res) => {
     });
 
     // Real-time: notify patient that doctor started the session
-    emit(req, 'consultation:started', {
-      appointmentId: appointmentId.toString(),
-      sessionId: session._id.toString(),
-      doctorId: appointment.doctor._id.toString(),
-      patientId: appointment.patient._id.toString()
-    });
+    try {
+      emit(req, 'consultation:started', {
+        appointmentId: appointmentId.toString(),
+        sessionId: session._id.toString(),
+        doctorId: docId,
+        patientId: patId
+      });
+
+      // Real-time: also notify all dashboards and lists that appointment is now in-progress
+      emit(req, 'appointment:updated', {
+        appointmentId: appointmentId.toString(),
+        doctorId: docId,
+        patientId: patId,
+        status: 'in-progress'
+      });
+    } catch (socketErr) {
+      console.warn('Socket emit error:', socketErr.message);
+    }
   } catch (err) {
     console.error('Start consultation error:', err);
-    res.status(500).json({ message: 'Server error starting consultation.' });
+    res.status(500).json({ message: err.message || 'Server error starting consultation.' });
   }
 });
 
@@ -167,8 +204,10 @@ router.get('/appointment/:appointmentId', auth, async (req, res) => {
     }
 
     const userId = req.user._id.toString();
-    const isDoctor = appointment.doctor.toString() === userId;
-    const isPatient = appointment.patient.toString() === userId;
+    const docId = (appointment.doctor?._id || appointment.doctor)?.toString();
+    const patId = (appointment.patient?._id || appointment.patient)?.toString();
+    const isDoctor = docId === userId;
+    const isPatient = patId === userId;
 
     if (!isDoctor && !isPatient && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied. You are not a participant in this appointment.' });
@@ -191,7 +230,7 @@ router.get('/appointment/:appointmentId', auth, async (req, res) => {
 // POST /api/consultation/:sessionId/end — End a consultation session (doctor only)
 router.post('/:sessionId/end', auth, doctorOnly, async (req, res) => {
   try {
-    const { consultationNotes, duration } = req.body;
+    const { consultationNotes, duration, isIncomplete } = req.body;
 
     const session = await ConsultationSession.findById(req.params.sessionId);
     if (!session) {
@@ -203,7 +242,7 @@ router.post('/:sessionId/end', auth, doctorOnly, async (req, res) => {
     }
 
     session.endedAt = new Date();
-    session.status = 'completed';
+    session.status = isIncomplete ? 'ended' : 'completed';
     session.consultationNotes = consultationNotes || '';
 
     // Calculate duration
@@ -214,44 +253,56 @@ router.post('/:sessionId/end', auth, doctorOnly, async (req, res) => {
     }
 
     // Add disconnected network event
+    if (!Array.isArray(session.networkEvents)) session.networkEvents = [];
     session.networkEvents.push({
       event: 'disconnected',
       timestamp: new Date(),
-      details: 'Consultation session ended'
+      details: isIncomplete ? 'Consultation session marked incomplete' : 'Consultation session ended'
     });
 
     await session.save();
 
-    // Update appointment status to completed
-    await Appointment.findByIdAndUpdate(session.appointment, { status: 'completed' });
+    // Update appointment status ONLY if not incomplete
+    if (!isIncomplete) {
+      await Appointment.findByIdAndUpdate(session.appointment, { status: 'completed' });
+    }
 
-    // Create audit log
-    await createAuditLog(
-      'CONSULTATION_ENDED',
-      req.user._id,
-      req.user.role,
-      req.user.name,
-      'ConsultationSession',
-      session._id,
-      { duration: session.duration, hasNotes: !!consultationNotes },
-      req.ip
-    );
+    // Create audit log safely
+    try {
+      await createAuditLog(
+        isIncomplete ? 'CONSULTATION_INCOMPLETE' : 'CONSULTATION_ENDED',
+        req.user._id,
+        req.user.role,
+        req.user.name,
+        'ConsultationSession',
+        session._id,
+        { duration: session.duration, hasNotes: !!consultationNotes, isIncomplete: !!isIncomplete },
+        req.ip
+      );
+    } catch (auditErr) {
+      console.warn('Audit log error:', auditErr.message);
+    }
 
     res.json({
-      message: 'Consultation session ended.',
+      message: isIncomplete ? 'Consultation session marked incomplete.' : 'Consultation session ended.',
       session
     });
 
     // Real-time: notify patient that consultation has ended
-    emit(req, 'consultation:ended', {
-      appointmentId: session.appointment.toString(),
-      sessionId: session._id.toString(),
-      doctorId: session.doctor.toString(),
-      patientId: session.patient.toString()
-    });
+    try {
+      emit(req, 'consultation:ended', {
+        appointmentId: session.appointment.toString(),
+        sessionId: session._id.toString(),
+        doctorId: session.doctor.toString(),
+        patientId: session.patient.toString(),
+        status: isIncomplete ? 'incomplete' : 'completed'
+      });
+    } catch (socketErr) {
+      console.warn('Socket emit error:', socketErr.message);
+    }
   } catch (err) {
     console.error('End consultation error:', err);
-    res.status(500).json({ message: 'Server error ending consultation.' });
+    res.status(500).json({ message: err.message || 'Server error ending consultation.' });
   }
 });
 

@@ -308,15 +308,16 @@ export default function SearchDoctors() {
                               type="button"
                               disabled={!isAvailable}
                               onClick={() => setSelectedSlot({ start: slotStart, end: slotEnd })}
-                              className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border ${
+                              className={`py-2 px-2 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-1 ${
                                 !isAvailable
-                                  ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-100 line-through'
+                                  ? 'opacity-40 cursor-not-allowed border-slate-200 text-slate-400 bg-slate-100'
                                   : isSelected
                                   ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
                                   : 'border-slate-200 text-slate-700 bg-white hover:border-blue-400 hover:bg-blue-50/50'
                               }`}
                             >
-                              {slotStart} – {slotEnd}
+                              <span>{slotStart} – {slotEnd}</span>
+                              {!isAvailable && <span className="text-[10px] font-normal text-slate-400">(Passed)</span>}
                             </button>
                           );
                         })}

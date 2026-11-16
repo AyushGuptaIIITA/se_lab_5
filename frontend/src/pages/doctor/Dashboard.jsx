@@ -35,25 +35,33 @@ export default function DoctorDashboard() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/appointments?limit=50');
       setAppointments(res.data.appointments || []);
     } catch {
-      setAlert({ type: 'error', message: 'Could not load appointments.' });
-    } finally { setLoading(false); }
+      if (!silent) setAlert({ type: 'error', message: 'Could not load appointments.' });
+    } finally { if (!silent) setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  // Real-time: refresh dashboard on appointment or consultation events
+  // Real-time: refresh dashboard on appointment or consultation events (socket + 3s poll)
   useEffect(() => {
-    const u1 = subscribe('appointment:new',      () => fetchData());
-    const u2 = subscribe('appointment:updated',  () => fetchData());
-    const u3 = subscribe('consultation:started', () => fetchData());
-    const u4 = subscribe('consultation:ended',   () => fetchData());
-    return () => { u1(); u2(); u3(); u4(); };
+    const u1 = subscribe('appointment:new',      () => fetchData(true));
+    const u2 = subscribe('appointment:updated',  () => fetchData(true));
+    const u3 = subscribe('consultation:started', () => fetchData(true));
+    const u4 = subscribe('consultation:ended',   () => fetchData(true));
+
+    const poll = setInterval(() => {
+      fetchData(true);
+    }, 3000);
+
+    return () => {
+      u1(); u2(); u3(); u4();
+      clearInterval(poll);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

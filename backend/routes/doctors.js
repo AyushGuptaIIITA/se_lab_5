@@ -143,23 +143,43 @@ router.get('/:id/availability', async (req, res) => {
       status: { $nin: ['cancelled', 'rescheduled'] }
     });
 
-    // Return slots with standardized { start, end, available } properties for the frontend
-    // Slots are always available — only doctor removing the slot disables it
+    // Return slots with standardized { start, end, available } properties for the frontend.
+    // A slot is unavailable ONLY if the date has passed, or if today and its start time has passed.
+    // Future slots are NEVER disabled when booked by patients — they stay active until doctor removes them.
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const isPastDate = endOfDay < todayStart;
+    const isToday = queryDate.toDateString() === now.toDateString();
+
     const slots = daySlots.map(slot => {
       const start = slot.startTime || slot.start;
       const end = slot.endTime || slot.end;
+
+      // Block past dates, and block past times for today
+      let available = true;
+      if (isPastDate) {
+        available = false;
+      } else if (isToday && start) {
+        const [h, m] = start.split(':').map(Number);
+        const slotTime = new Date(now);
+        slotTime.setHours(h, m, 0, 0);
+        if (slotTime < now) available = false;
+      }
+
       return {
         _id: slot._id,
         start,
         end,
         startTime: start,
         endTime: end,
-        available: true,
+        available,
         isBooked: false
       };
     });
 
-    const availableCount = slots.length;
+    const availableCount = slots.filter(s => s.available).length;
 
     res.json({
       doctor: { _id: doctor._id, name: doctor.name, specialization: doctor.specialization },

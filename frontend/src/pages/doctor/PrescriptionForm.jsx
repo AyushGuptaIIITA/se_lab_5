@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   FileText, Plus, Trash2, Send, Loader2, CheckCircle, Shield, 
@@ -56,6 +56,10 @@ export default function PrescriptionForm() {
   const [selectedDrugInfo, setSelectedDrugInfo] = useState(null);
   const searchTimeoutRef = useRef(null);
 
+  // AI Diagnostic Suggestions state
+  const [aiPredictions, setAiPredictions] = useState(null);
+  const [loadingAI, setLoadingAI] = useState(false);
+
   // Load all doctor appointments & templates on mount
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -101,6 +105,18 @@ export default function PrescriptionForm() {
           setExistingPrescription(null);
           if (appt.symptoms) {
             setAdditionalNotes(`Patient symptoms noted: ${appt.symptoms}`);
+          }
+          // Auto-run AI disease prediction when symptoms exist
+          if (appt.symptoms) {
+            setLoadingAI(true);
+            api.post('/consultation/predict-disease', {
+              symptoms: appt.symptoms,
+              clinicalNotes: appt.notes || ''
+            }).then(r => {
+              setAiPredictions(r.data?.predictions || null);
+            }).catch(() => {
+              // silent — AI suggestions are non-critical
+            }).finally(() => setLoadingAI(false));
           }
         }
       } catch {
@@ -536,6 +552,47 @@ export default function PrescriptionForm() {
               </div>
             ) : null}
 
+
+            {/* AI Diagnostic Suggestions */}
+            {(loadingAI || aiPredictions) && (
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 space-y-3">
+                <div className="flex items-center space-x-2 text-indigo-800 font-black text-xs uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span>AI Diagnostic Suggestions (Based on Patient Symptoms)</span>
+                </div>
+                {loadingAI ? (
+                  <div className="flex items-center space-x-2 text-xs text-indigo-600">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Running AI analysis on patient symptoms...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(Array.isArray(aiPredictions) ? aiPredictions : [aiPredictions]).filter(Boolean).map((pred, i) => (
+                      <div key={i} className="flex items-start justify-between gap-3 p-3 rounded-xl bg-white border border-indigo-100 shadow-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-black text-indigo-900">{pred.disease || pred.condition || String(pred)}</span>
+                            {pred.confidence && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                                {typeof pred.confidence === 'number' ? Math.round(pred.confidence * 100) + '%' : pred.confidence}
+                              </span>
+                            )}
+                          </div>
+                          {pred.description && <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{pred.description}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDiagnosis(pred.disease || pred.condition || String(pred))}
+                          className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors whitespace-nowrap"
+                        >
+                          Use as Diagnosis
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {/* Diagnosis */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">

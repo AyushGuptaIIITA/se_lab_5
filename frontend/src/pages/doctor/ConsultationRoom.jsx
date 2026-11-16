@@ -44,7 +44,7 @@ export default function ConsultationRoom() {
   // ML Disease Prediction state
   const [mlPredictions, setMlPredictions] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
-  const [showMlPanel, setShowMlPanel] = useState(false);
+  const [showMlPanel, setShowMlPanel] = useState(true);
 
   // ── Real-time Speech Recognition state (doctor only) ──────────────────────
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -205,13 +205,27 @@ export default function ConsultationRoom() {
         });
       });
 
-      // Handle call end
-      jApi.addEventListener('readyToClose', () => {
+      // Handle call hangup by doctor or patient
+      const handleHangup = () => {
         if (isDoctor) {
           markAsCompleted();
         } else {
           stopJitsi();
           navigate('/patient/appointments');
+        }
+      };
+
+      jApi.addEventListener('readyToClose', handleHangup);
+      jApi.addEventListener('videoConferenceLeft', handleHangup);
+
+      // Patient: if doctor leaves the meeting, immediately end call and redirect
+      jApi.addEventListener('participantLeft', () => {
+        if (!isDoctor) {
+          setAlert({ type: 'info', message: 'The doctor has ended the video consultation.' });
+          setTimeout(() => {
+            stopJitsi();
+            navigate('/patient/appointments');
+          }, 1200);
         }
       });
 
@@ -443,22 +457,36 @@ export default function ConsultationRoom() {
           setLoading(false);
           return;
         }
-        // 'incomplete' appointments: doctor can restart, patient sees standard waiting room
+        // 'incomplete' or 'confirmed' appointments: doctor can start/restart, patient waits
 
         const sess = sessionRes.data?.session;
         if (sess) {
-          setSession(sess);
-          sessionRef.current = sess;
-          setMessages(sess.messages || []);
-          if (sess.consultationNotes) setNotes(sess.consultationNotes);
+          if (['completed', 'ended', 'disconnected'].includes(sess.status)) {
+            // Previous session ended. Keep notes if any, but DO NOT set active session.
+            if (sess.consultationNotes) setNotes(sess.consultationNotes);
+            setSession(null);
+            sessionRef.current = null;
+          } else {
+            setSession(sess);
+            sessionRef.current = sess;
+            setMessages(sess.messages || []);
+            if (sess.consultationNotes) setNotes(sess.consultationNotes);
 
-          if (['completed', 'ended', 'disconnected'].includes(sess.status)) { setLoading(false); return; }
+            if (sess.startedAt) {
+              setElapsed(Math.max(0, Math.floor((Date.now() - new Date(sess.startedAt)) / 1000)));
+            }
 
-          if (sess.startedAt) {
-            setElapsed(Math.max(0, Math.floor((Date.now() - new Date(sess.startedAt)) / 1000)));
+            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
           }
+        }
 
-          timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+        // Auto-run AI Disease Prediction on load for doctor so they can prescribe better in real time
+        if (isDoctor && appt.symptoms) {
+          api.post('/consultation/predict-disease', {
+            symptoms: appt.symptoms,
+            clinicalNotes: sess?.consultationNotes || '',
+            chatTranscript: sess?.messages || []
+          }).then(res => setMlPredictions(res.data)).catch(() => {});
         }
       } catch (err) {
         if (mounted) setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to load consultation room.' });
@@ -509,7 +537,7 @@ export default function ConsultationRoom() {
         }).catch(() => {});
     });
 
-    // Polling fallback every 5s (reduced from 2.5s since socket handles fast path)
+    // Polling fallback every 2.5s alongside socket
     const poll = setInterval(async () => {
       try {
         const res = await api.get(`/consultation/appointment/${appointmentId}`);
@@ -522,7 +550,7 @@ export default function ConsultationRoom() {
           clearInterval(poll);
         }
       } catch {}
-    }, 5000);
+    }, 2500);
 
     return () => { unsub(); clearInterval(poll); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -540,24 +568,36 @@ export default function ConsultationRoom() {
       if (data?.chatMessage) setMessages(prev => [...prev, data.chatMessage]);
     });
 
-    // Socket: consultation ended (patient side)
+    // Socket: consultation ended (patient side) — navigate patient away immediately
     const unsubEnd = subscribe('consultation:ended', (data) => {
       if (data?.appointmentId !== appointmentId) return;
-      setSession(prev => prev ? { ...prev, status: 'completed' } : prev);
       stopJitsi();
+      clearInterval(timerRef.current);
+      clearInterval(pollingRef.current);
+      if (!isDoctor) {
+        // Patient: redirect to their appointments with a completed message
+        navigate('/patient/appointments');
+      } else {
+        setSession(prev => prev ? { ...prev, status: 'completed' } : prev);
+      }
     });
 
-    // Polling fallback every 8s — much less frequent now
+    // Polling fallback every 3s so client never lags if socket drops
     pollingRef.current = setInterval(async () => {
       try {
         const res = await api.get(`/consultation/${session._id}`);
         if (res.data?.session?.messages) setMessages(res.data.session.messages);
-        if (res.data?.session?.status === 'completed') {
-          setSession(res.data.session);
+        if (['completed', 'ended'].includes(res.data?.session?.status)) {
           stopJitsi();
+          clearInterval(timerRef.current);
+          if (!isDoctor) {
+            navigate('/patient/appointments');
+          } else {
+            setSession(res.data.session);
+          }
         }
       } catch {}
-    }, 8000);
+    }, 3000);
 
     return () => {
       unsubMsg();
@@ -652,6 +692,15 @@ export default function ConsultationRoom() {
     if (!window.confirm('Mark this consultation as incomplete?')) return;
     setEnding(true);
     try {
+      if (session?._id) {
+        try {
+          await api.post(`/consultation/${session._id}/end`, {
+            consultationNotes: notes,
+            duration: Math.floor(elapsed / 60) || 1,
+            isIncomplete: true
+          });
+        } catch {}
+      }
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'incomplete' });
       clearInterval(timerRef.current);
       stopJitsi();
@@ -664,36 +713,32 @@ export default function ConsultationRoom() {
     }
   };
 
-  const isCompleted = appointment?.status === 'completed' || ['completed', 'ended'].includes(session?.status);
-  // Incomplete: patient sees the incomplete screen, but doctor can restart the call
-  const isIncomplete = appointment?.status === 'incomplete' && !isDoctor;
+  // Completed is strictly when appointment.status === 'completed'
+  // Incomplete appointments are NEVER blocked — doctor can restart, patient can rejoin
+  const isCompleted = appointment?.status === 'completed';
 
   const doctorName = appointment?.doctor?.name?.startsWith('Dr.')
     ? appointment?.doctor?.name
     : `Dr. ${appointment?.doctor?.name || 'Specialist'}`;
   const patientName = appointment?.patient?.name || 'Patient';
 
-  // ─── Completed / Incomplete screen ───────────────────────────────────────
-  if (isCompleted || isIncomplete) {
+  // ─── Completed screen (Only shown when appointment is finalized) ──────────
+  if (isCompleted) {
     return (
       <Layout>
         <div className="max-w-2xl mx-auto py-12 px-4 text-center">
           <div className="glass-panel p-8 rounded-3xl bg-white shadow-xl space-y-5 border border-slate-200">
-            <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm ${
-              isCompleted ? 'bg-emerald-50 border border-emerald-200 text-emerald-600' : 'bg-amber-50 border border-amber-200 text-amber-600'
-            }`}>
-              {isCompleted ? <CheckCircle className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
+            <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm bg-emerald-50 border border-emerald-200 text-emerald-600">
+              <CheckCircle className="w-8 h-8" />
             </div>
             <div>
               <h1 className="text-2xl font-black text-slate-900">
-                {isCompleted ? 'Consultation Completed' : 'Consultation Marked Incomplete'}
+                Consultation Completed
               </h1>
               <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
-                {isCompleted
-                  ? isDoctor
-                    ? 'The consultation has been completed. You can now write a prescription for this patient.'
-                    : 'Your consultation has ended. Your doctor will issue a prescription shortly.'
-                  : 'This session was marked incomplete. Please wait for the doctor to restart the session.'}
+                {isDoctor
+                  ? 'The consultation has been completed. You can now write a prescription for this patient.'
+                  : 'Your consultation has ended. Your doctor will issue a prescription shortly.'}
               </p>
             </div>
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left space-y-1.5 max-w-xs mx-auto">
@@ -702,7 +747,7 @@ export default function ConsultationRoom() {
               <div className="flex justify-between"><span className="text-slate-500">Date:</span><span className="font-semibold">{formatAppointmentDate(appointment?.date)}</span></div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              {isCompleted && isDoctor && (
+              {isDoctor && (
                 <Link
                   to={`/doctor/prescription/${appointmentId}`}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center space-x-2"
@@ -710,7 +755,7 @@ export default function ConsultationRoom() {
                   <FileText className="w-4 h-4" /><span>Write Prescription</span>
                 </Link>
               )}
-              {isCompleted && !isDoctor && (
+              {!isDoctor && (
                 <Link
                   to="/patient/prescriptions"
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center space-x-2"
@@ -787,17 +832,24 @@ export default function ConsultationRoom() {
 
   // ─── Patient Waiting Room ─────────────────────────────────────────────────
   if (!isDoctor && (!session || session.status !== 'in-progress')) {
+    const isPaused = appointment?.status === 'incomplete';
     return (
       <Layout>
         <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
           <div className="text-center space-y-2">
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-              <span>Consultation Waiting Room</span>
+            <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold border ${
+              isPaused ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-blue-50 text-blue-700 border-blue-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full animate-ping ${isPaused ? 'bg-amber-500' : 'bg-blue-500'}`} />
+              <span>{isPaused ? 'Consultation Paused / Rejoining Allowed' : 'Consultation Waiting Room'}</span>
             </div>
-            <h1 className="text-2xl font-black text-slate-900">Waiting for {doctorName}</h1>
+            <h1 className="text-2xl font-black text-slate-900">
+              {isPaused ? `Waiting for ${doctorName} to Resume Call` : `Waiting for ${doctorName}`}
+            </h1>
             <p className="text-sm text-slate-500 max-w-md mx-auto">
-              Your appointment is confirmed. The video call will start automatically once the doctor begins the consultation.
+              {isPaused
+                ? 'This consultation was paused or marked incomplete. When your doctor restarts the call, you will be reconnected automatically.'
+                : 'Your appointment is confirmed. The video call will start automatically once the doctor begins the consultation.'}
             </p>
           </div>
 
@@ -846,9 +898,19 @@ export default function ConsultationRoom() {
 
   // ─── Doctor Pre-Start Workspace ───────────────────────────────────────────
   if (isDoctor && (!session || session.status !== 'in-progress')) {
+    const isPaused = appointment?.status === 'incomplete';
     return (
       <Layout>
         <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+          {isPaused && (
+            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center space-x-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>
+                <strong>Consultation Marked Incomplete:</strong> You can restart and re-enter the video consultation call with this patient at any time using the button below.
+              </span>
+            </div>
+          )}
+
           <div className="glass-panel p-6 rounded-3xl bg-white shadow-card border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
@@ -864,7 +926,11 @@ export default function ConsultationRoom() {
               disabled={starting}
               className="flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all hover:scale-105 disabled:opacity-50 flex-shrink-0"
             >
-              {starting ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Activating...</span></> : <><Video className="w-5 h-5" /><span>Start Live Video Consultation</span></>}
+              {starting ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /><span>Activating...</span></>
+              ) : (
+                <><Video className="w-5 h-5" /><span>{isPaused ? 'Restart / Resume Video Consultation' : 'Start Live Video Consultation'}</span></>
+              )}
             </button>
           </div>
 

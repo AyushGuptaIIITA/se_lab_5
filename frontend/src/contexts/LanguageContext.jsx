@@ -56,14 +56,28 @@ export function LanguageProvider({ children }) {
   }, [lang]);
 
   // ── DOM-level translation: walk all text nodes and translate known phrases ──
-  const applyDOMTranslations = useCallback(() => {
-    if (lang === 'en') return;
+  const applyDOMTranslations = useCallback((targetLang) => {
+    const resolvedLang = targetLang ?? lang;
 
     const walk = (node) => {
       if (node.nodeType === Node.TEXT_NODE) {
-        const raw = node.textContent.trim();
-        if (raw.length < 2 || raw.length > 120) return; // skip too short/long
-        const translated = PHRASE_DICTIONARY[raw]?.[lang];
+        const raw = (node._originalText ?? node.textContent).trim();
+        if (raw.length < 2 || raw.length > 120) return;
+
+        // Always store original English text the first time we see it
+        if (!node._originalText) {
+          node._originalText = node.textContent;
+        }
+
+        if (resolvedLang === 'en') {
+          // Restore original English
+          if (node.textContent !== node._originalText) {
+            node.textContent = node._originalText;
+          }
+          return;
+        }
+
+        const translated = PHRASE_DICTIONARY[raw]?.[resolvedLang];
         if (translated && node.textContent !== translated) {
           node.textContent = translated;
         }
@@ -71,14 +85,20 @@ export function LanguageProvider({ children }) {
         node.nodeType === Node.ELEMENT_NODE &&
         !['SCRIPT', 'STYLE', 'INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)
       ) {
-        // Don't translate placeholder/value attributes
         node.childNodes.forEach(walk);
       }
     };
 
-    // Walk the main app content
     const app = document.getElementById('root');
-    if (app) app.childNodes.forEach(walk);
+    if (app) {
+      const allNodes = [];
+      const collect = (n) => {
+        allNodes.push(n);
+        n.childNodes.forEach(collect);
+      };
+      collect(app);
+      allNodes.forEach(walk);
+    }
   }, [lang]);
 
   // Set html lang attribute on mount + language change
@@ -86,10 +106,11 @@ export function LanguageProvider({ children }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  // Apply DOM translations when lang changes (non-English)
+  // Apply DOM translations when lang changes
   useEffect(() => {
     if (lang === 'en') {
-      // Disconnect observer when back to English (page refresh will restore)
+      // Restore originals for all nodes
+      applyDOMTranslations('en');
       if (observerRef.current) {
         observerRef.current.disconnect();
         observerRef.current = null;
@@ -98,12 +119,12 @@ export function LanguageProvider({ children }) {
     }
 
     // Run immediately
-    applyDOMTranslations();
+    applyDOMTranslations(lang);
 
     // Then watch for DOM changes (React re-renders) and re-translate
     if (observerRef.current) observerRef.current.disconnect();
     const observer = new MutationObserver(() => {
-      applyDOMTranslations();
+      applyDOMTranslations(lang);
     });
     observer.observe(document.body, {
       childList: true,

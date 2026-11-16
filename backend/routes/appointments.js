@@ -39,6 +39,26 @@ router.post('/', auth, patientOnly, async (req, res) => {
       endOfDay.setHours(23, 59, 59, 999);
     }
 
+    // Block booking if date is in the past
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    if (endOfDay < todayStart) {
+      return res.status(400).json({ message: 'Cannot book appointment for a past date.' });
+    }
+
+    // If booking for today, verify time slot has not already passed
+    const isToday = now >= startOfDay && now <= endOfDay;
+    if (isToday && timeSlot.start) {
+      const [sh, sm] = timeSlot.start.split(':').map(Number);
+      const slotStartTime = new Date(now);
+      slotStartTime.setHours(sh, sm, 0, 0);
+      if (slotStartTime < now) {
+        return res.status(400).json({ message: 'Cannot book appointment for a time slot that has already passed today.' });
+      }
+    }
+
     // Slots stay active until doctor removes them — multiple patients can book the same slot.
     // Only block if the SAME patient already has a non-cancelled appointment for this slot.
     const existingAppointment = await Appointment.findOne({
@@ -273,6 +293,16 @@ router.patch('/:id/status', auth, async (req, res) => {
       patientId: appointment.patient._id.toString(),
       status
     });
+
+    // Real-time: if call concluded or marked incomplete/cancelled, lead patient and doctor to end the call
+    if (['completed', 'incomplete', 'cancelled'].includes(status)) {
+      emit(req, 'consultation:ended', {
+        appointmentId: appointment._id.toString(),
+        doctorId: appointment.doctor._id.toString(),
+        patientId: appointment.patient._id.toString(),
+        status
+      });
+    }
   } catch (err) {
     console.error('Update appointment status error:', err);
     res.status(500).json({ message: 'Server error updating appointment status.' });

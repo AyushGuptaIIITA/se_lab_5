@@ -22,15 +22,15 @@ export default function PatientAppointments() {
   const [actionLoading, setActionLoading] = useState('');
   const [alert, setAlert] = useState(null);
 
-  const fetchAppointments = async () => {
-    setLoading(true);
+  const fetchAppointments = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/appointments?limit=100');
       setAppointments(res.data.appointments || []);
     } catch {
-      setAlert({ type: 'error', message: 'Failed to load your consultations.' });
+      if (!silent) setAlert({ type: 'error', message: 'Failed to load your consultations.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -39,11 +39,21 @@ export default function PatientAppointments() {
   }, []);
 
   // Real-time: refresh when appointment status changes or new prescription arrives
+  // Socket-first (instant) + 3s polling fallback (guaranteed real-time without refresh)
   useEffect(() => {
-    const unsub1 = subscribe('appointment:updated',  () => fetchAppointments());
-    const unsub2 = subscribe('consultation:started', () => fetchAppointments());
-    const unsub3 = subscribe('consultation:ended',   () => fetchAppointments());
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub1 = subscribe('appointment:new',      () => fetchAppointments(true));
+    const unsub2 = subscribe('appointment:updated',  () => fetchAppointments(true));
+    const unsub3 = subscribe('consultation:started', () => fetchAppointments(true));
+    const unsub4 = subscribe('consultation:ended',   () => fetchAppointments(true));
+
+    const poll = setInterval(() => {
+      fetchAppointments(true);
+    }, 3000);
+
+    return () => {
+      unsub1(); unsub2(); unsub3(); unsub4();
+      clearInterval(poll);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -266,6 +276,22 @@ export default function PatientAppointments() {
                             (Consultation concluded — rejoining closed)
                           </span>
                         </>
+                      )}
+
+                      {/* Incomplete: Can Reopen & Rejoin Video Consultation */}
+                      {apt.status === 'incomplete' && (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">
+                            Incomplete / Paused
+                          </span>
+                          <Link
+                            to={`/patient/consultation/${apt._id}`}
+                            className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-500/20 transition-all hover:scale-105 active:scale-95"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>Rejoin Consultation</span>
+                          </Link>
+                        </div>
                       )}
 
                       {/* Pending: Awaiting Doctor notice */}

@@ -24,15 +24,15 @@ export default function DoctorAppointments() {
   const [actionLoading, setActionLoading] = useState('');
   const [alert, setAlert] = useState(null);
 
-  const fetchAppointments = async () => {
-    setLoading(true);
+  const fetchAppointments = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/appointments?limit=100');
       setAppointments(res.data.appointments || []);
     } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to load consultation list.' });
+      if (!silent) setAlert({ type: 'error', message: 'Failed to load consultation list.' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -41,10 +41,21 @@ export default function DoctorAppointments() {
   }, []);
 
   // Real-time: refresh list when any appointment changes
+  // Socket-first (instant) + 3s polling fallback (guaranteed real-time without refresh)
   useEffect(() => {
-    const unsub1 = subscribe('appointment:new',     () => fetchAppointments());
-    const unsub2 = subscribe('appointment:updated', () => fetchAppointments());
-    return () => { unsub1(); unsub2(); };
+    const unsub1 = subscribe('appointment:new',      () => fetchAppointments(true));
+    const unsub2 = subscribe('appointment:updated',  () => fetchAppointments(true));
+    const unsub3 = subscribe('consultation:started', () => fetchAppointments(true));
+    const unsub4 = subscribe('consultation:ended',   () => fetchAppointments(true));
+
+    const poll = setInterval(() => {
+      fetchAppointments(true);
+    }, 3000);
+
+    return () => {
+      unsub1(); unsub2(); unsub3(); unsub4();
+      clearInterval(poll);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -354,12 +365,21 @@ export default function DoctorAppointments() {
                           <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
                             Marked Incomplete
                           </span>
+                          <Link
+                            to={`/doctor/consultation/${apt._id}`}
+                            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-sm transition-all"
+                            title="Reopen consultation workspace and restart video call"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>Reopen & Rejoin Call</span>
+                          </Link>
                           <button
                             onClick={() => handleStatusUpdate(apt._id, 'confirmed')}
                             disabled={!!actionLoading}
                             className="text-xs font-bold text-blue-600 hover:underline"
+                            title="Reset to confirmed"
                           >
-                            Re-Open
+                            Reset Confirmed
                           </button>
                         </div>
                       )}
