@@ -439,10 +439,11 @@ export default function ConsultationRoom() {
           }
         }
 
-        if (['completed', 'incomplete'].includes(appt.status)) {
+        if (appt.status === 'completed') {
           setLoading(false);
           return;
         }
+        // 'incomplete' appointments: doctor can restart, patient sees standard waiting room
 
         const sess = sessionRes.data?.session;
         if (sess) {
@@ -664,7 +665,8 @@ export default function ConsultationRoom() {
   };
 
   const isCompleted = appointment?.status === 'completed' || ['completed', 'ended'].includes(session?.status);
-  const isIncomplete = appointment?.status === 'incomplete';
+  // Incomplete: patient sees the incomplete screen, but doctor can restart the call
+  const isIncomplete = appointment?.status === 'incomplete' && !isDoctor;
 
   const doctorName = appointment?.doctor?.name?.startsWith('Dr.')
     ? appointment?.doctor?.name
@@ -691,7 +693,7 @@ export default function ConsultationRoom() {
                   ? isDoctor
                     ? 'The consultation has been completed. You can now write a prescription for this patient.'
                     : 'Your consultation has ended. Your doctor will issue a prescription shortly.'
-                  : 'This session was marked incomplete. Please reschedule if needed.'}
+                  : 'This session was marked incomplete. Please wait for the doctor to restart the session.'}
               </p>
             </div>
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left space-y-1.5 max-w-xs mx-auto">

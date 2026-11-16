@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 
@@ -10,9 +10,10 @@ export function SocketProvider({ children }) {
   const { user } = useAuth();
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
+  // Store pending listeners so we can re-attach after reconnect
+  const listenersRef = useRef([]); // [{ event, handler }]
 
   useEffect(() => {
-    // Connect socket
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 10,
@@ -23,10 +24,15 @@ export function SocketProvider({ children }) {
 
     socket.on('connect', () => {
       setConnected(true);
-      // Join user's personal room so server can target us
+      // Re-join user room on (re)connect
       if (user?._id) {
         socket.emit('join:user', user._id);
       }
+      // Re-attach all pending listeners so nothing is missed after reconnect
+      listenersRef.current.forEach(({ event, handler }) => {
+        socket.off(event, handler); // avoid duplicates
+        socket.on(event, handler);
+      });
     });
 
     socket.on('disconnect', () => setConnected(false));
@@ -39,7 +45,7 @@ export function SocketProvider({ children }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-join user room when user logs in/changes
+  // Re-join user room when user logs in / changes
   useEffect(() => {
     if (socketRef.current?.connected && user?._id) {
       socketRef.current.emit('join:user', user._id);
@@ -47,24 +53,38 @@ export function SocketProvider({ children }) {
   }, [user?._id]);
 
   /**
-   * Join an appointment-specific room (call from ConsultationRoom)
+   * Join an appointment-specific room (called from ConsultationRoom)
    */
-  const joinAppointmentRoom = (appointmentId) => {
+  const joinAppointmentRoom = useCallback((appointmentId) => {
     if (socketRef.current && appointmentId) {
       socketRef.current.emit('join:appointment', appointmentId);
     }
-  };
+  }, []);
 
   /**
    * Subscribe to a socket event. Returns an unsubscribe function.
-   * Usage: useEffect(() => subscribe('appointment:updated', handler), []);
+   * Safe to call even before socket connects — listener is registered immediately
+   * and re-attached on reconnect.
    */
-  const subscribe = (event, handler) => {
-    const sock = socketRef.current;
-    if (!sock) return () => {};
-    sock.on(event, handler);
-    return () => sock.off(event, handler);
-  };
+  const subscribe = useCallback((event, handler) => {
+    // Register in persistent list so it survives reconnects
+    const entry = { event, handler };
+    listenersRef.current.push(entry);
+
+    // Attach now if already connected
+    if (socketRef.current) {
+      socketRef.current.on(event, handler);
+    }
+
+    return () => {
+      // Remove from persistent list
+      listenersRef.current = listenersRef.current.filter(e => e !== entry);
+      // Detach from live socket
+      if (socketRef.current) {
+        socketRef.current.off(event, handler);
+      }
+    };
+  }, []);
 
   return (
     <SocketContext.Provider value={{ socket: socketRef, connected, subscribe, joinAppointmentRoom }}>

@@ -39,6 +39,7 @@ router.post('/start', auth, async (req, res) => {
         isCompleted: true
       });
     }
+    // 'incomplete' appointments are allowed to be restarted by the doctor
 
     if (appointment.status === 'cancelled') {
       return res.status(400).json({ 
@@ -116,8 +117,8 @@ router.post('/start', auth, async (req, res) => {
 
     await session.save();
 
-    // Update appointment status to in-progress if confirmed or pending
-    if (['pending', 'confirmed'].includes(appointment.status)) {
+    // Update appointment status to in-progress if confirmed, pending, or incomplete (restart)
+    if (['pending', 'confirmed', 'incomplete'].includes(appointment.status)) {
       appointment.status = 'in-progress';
       appointment.consultationSession = session._id;
       await appointment.save();

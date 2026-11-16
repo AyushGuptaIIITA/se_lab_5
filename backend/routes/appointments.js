@@ -39,8 +39,11 @@ router.post('/', auth, patientOnly, async (req, res) => {
       endOfDay.setHours(23, 59, 59, 999);
     }
 
+    // Slots stay active until doctor removes them — multiple patients can book the same slot.
+    // Only block if the SAME patient already has a non-cancelled appointment for this slot.
     const existingAppointment = await Appointment.findOne({
       doctor,
+      patient: req.user._id,
       date: { $gte: startOfDay, $lte: endOfDay },
       'timeSlot.start': timeSlot.start,
       'timeSlot.end': timeSlot.end,
@@ -48,7 +51,7 @@ router.post('/', auth, patientOnly, async (req, res) => {
     });
 
     if (existingAppointment) {
-      return res.status(409).json({ message: 'This time slot is already booked.' });
+      return res.status(409).json({ message: 'You already have an appointment in this time slot.' });
     }
 
     const appointment = new Appointment({
