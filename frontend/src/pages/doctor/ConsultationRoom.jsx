@@ -589,7 +589,9 @@ export default function ConsultationRoom() {
       clearInterval(timerRef.current);
       stopJitsi();
       stopSpeechRecognition();
-      navigate(`/prescription/appointment/${appointmentId}`);
+      // Don't auto-navigate to prescription — stay on completed screen so doctor can choose
+      // whether to write a prescription or go back to appointments.
+      setSession(prev => ({ ...prev, status: 'completed' }));
     } catch (err) {
       setAlert({ type: 'error', message: 'Failed to complete consultation.' });
     } finally {
@@ -639,7 +641,9 @@ export default function ConsultationRoom() {
               </h1>
               <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
                 {isCompleted
-                  ? 'This appointment has been concluded. View your e-prescription below.'
+                  ? isDoctor
+                    ? 'The consultation has been completed. You can now write a prescription for this patient.'
+                    : 'Your consultation has ended. Your doctor will issue a prescription shortly.'
                   : 'This session was marked incomplete. Please reschedule if needed.'}
               </p>
             </div>
@@ -649,12 +653,20 @@ export default function ConsultationRoom() {
               <div className="flex justify-between"><span className="text-slate-500">Date:</span><span className="font-semibold">{formatAppointmentDate(appointment?.date)}</span></div>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              {isCompleted && (
+              {isCompleted && isDoctor && (
                 <Link
-                  to={`/prescription/appointment/${appointmentId}`}
+                  to={`/doctor/prescription/${appointmentId}`}
                   className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center space-x-2"
                 >
-                  <FileText className="w-4 h-4" /><span>View e-Prescription</span>
+                  <FileText className="w-4 h-4" /><span>Write Prescription</span>
+                </Link>
+              )}
+              {isCompleted && !isDoctor && (
+                <Link
+                  to="/patient/prescriptions"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center space-x-2"
+                >
+                  <FileText className="w-4 h-4" /><span>View My Prescriptions</span>
                 </Link>
               )}
               <Link
