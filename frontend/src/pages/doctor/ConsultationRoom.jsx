@@ -3,8 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   Video, VideoOff, Mic, MicOff, PhoneOff, AlertTriangle, 
   Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
-  ExternalLink, CheckCircle, Stethoscope, ArrowLeft, XCircle, Calendar,
-  Brain, TrendingUp, AlertCircle, Zap
+  ExternalLink, CheckCircle, ArrowLeft, XCircle, Calendar,
+  Brain, TrendingUp, AlertCircle, Zap, Radio, Square, Activity
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
@@ -42,6 +42,17 @@ export default function ConsultationRoom() {
   const [mlPredictions, setMlPredictions] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [showMlPanel, setShowMlPanel] = useState(false);
+
+  // ── Real-time Speech Recognition state (doctor only) ──────────────────────
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');      // rolling current phrase
+  const [fullTranscript, setFullTranscript] = useState('');      // accumulated session transcript
+  const [speechKeywords, setSpeechKeywords] = useState([]);       // detected medical keywords
+  const [autoAnalyze, setAutoAnalyze] = useState(true);          // auto-run ML on new speech
+  const recognitionRef = useRef(null);
+  const autoAnalyzeTimerRef = useRef(null);
+  const fullTranscriptRef = useRef('');                           // ref so callbacks always have latest
 
   // Jitsi state
   const jitsiApiRef = useRef(null);
@@ -235,6 +246,160 @@ export default function ConsultationRoom() {
     setTimeout(() => setAlert(null), 3000);
   };
 
+  // ─── Medical keyword extractor ────────────────────────────────────────────
+  const MEDICAL_KEYWORDS = [
+    'fever','cough','pain','headache','nausea','vomiting','diarrhea','fatigue',
+    'chest','breathless','breathing','shortness','throat','cold','runny','sneeze',
+    'blood','pressure','sugar','diabetes','hypertension','anxiety','stress',
+    'rash','itch','swelling','joint','muscle','bone','stomach','abdomen',
+    'kidney','liver','heart','pulse','oxygen','bp','temperature','infection',
+    'dengue','malaria','typhoid','covid','flu','pneumonia','asthma','migraine',
+    'anemia','thyroid','jaundice','ulcer','gastritis','urine','platelet',
+    'dizzy','weakness','appetite','weight','insomnia','constipation','acidity',
+    'allergy','inflammation','discharge','numbness','tingling','cramp','spasm',
+    'back pain','knee','hip','shoulder','neck','burn','wound','fracture',
+    'sore throat','ear pain','eye','vision','hearing loss','unconscious',
+  ];
+
+  const extractMedicalKeywords = (text) => {
+    const lower = text.toLowerCase();
+    return [...new Set(
+      MEDICAL_KEYWORDS.filter(kw => lower.includes(kw))
+    )];
+  };
+
+  // ─── Speech Recognition init & control ───────────────────────────────────
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;        // keep listening across pauses
+      recognition.interimResults = true;    // show partial results live
+      recognition.lang = 'en-IN';           // Indian English; falls back to en-US
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalChunk += transcript + ' ';
+          } else {
+            interim += transcript;
+          }
+        }
+
+        // Update live (interim) display
+        setLiveTranscript(interim);
+
+        // Accumulate confirmed (final) text
+        if (finalChunk) {
+          const updated = fullTranscriptRef.current + finalChunk;
+          fullTranscriptRef.current = updated;
+          setFullTranscript(updated);
+
+          // Extract and show detected medical keywords
+          const kws = extractMedicalKeywords(updated);
+          setSpeechKeywords(kws);
+
+          // Auto-trigger ML analysis 4 seconds after last spoken chunk
+          if (autoAnalyze) {
+            clearTimeout(autoAnalyzeTimerRef.current);
+            autoAnalyzeTimerRef.current = setTimeout(() => {
+              runMlPredictionWithSpeech(updated);
+            }, 4000);
+          }
+        }
+      };
+
+      recognition.onerror = (e) => {
+        // 'no-speech' is benign — just means silence; restart quietly
+        if (e.error === 'no-speech') return;
+        if (e.error === 'not-allowed') {
+          setAlert({ type: 'error', message: 'Microphone access denied. Please allow mic permissions to use AI speech analysis.' });
+          setIsListening(false);
+        }
+      };
+
+      recognition.onend = () => {
+        // Auto-restart if still supposed to be listening (interrupted by browser)
+        if (recognitionRef.current && recognitionRef.current._shouldListen) {
+          try { recognitionRef.current.start(); } catch {}
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognitionRef.current._shouldListen = false;
+    }
+
+    return () => {
+      stopSpeechRecognition();
+      clearTimeout(autoAnalyzeTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startSpeechRecognition = () => {
+    if (!recognitionRef.current || isListening) return;
+    try {
+      recognitionRef.current._shouldListen = true;
+      recognitionRef.current.start();
+      setIsListening(true);
+      setShowMlPanel(true);
+    } catch (e) {
+      console.warn('Speech recognition start error:', e);
+    }
+  };
+
+  const stopSpeechRecognition = () => {
+    if (!recognitionRef.current) return;
+    recognitionRef.current._shouldListen = false;
+    try { recognitionRef.current.stop(); } catch {}
+    setIsListening(false);
+    setLiveTranscript('');
+    clearTimeout(autoAnalyzeTimerRef.current);
+  };
+
+  const toggleSpeechRecognition = () => {
+    if (isListening) {
+      stopSpeechRecognition();
+    } else {
+      startSpeechRecognition();
+    }
+  };
+
+  // ─── ML prediction that also includes speech transcript ───────────────────
+  const runMlPredictionWithSpeech = useCallback(async (speechText) => {
+    setMlLoading(true);
+    setShowMlPanel(true);
+    try {
+      const chatTranscript = messages.map(m => ({ text: m.text || '' }));
+      // Include speech transcript as extra "chat" entries so it's analysed too
+      if (speechText) {
+        chatTranscript.push({ text: '[Live Speech] ' + speechText });
+      }
+      const res = await api.post('/consultation/predict-disease', {
+        symptoms: appointment?.symptoms || '',
+        clinicalNotes: notes,
+        chatTranscript
+      });
+      setMlPredictions(res.data);
+    } catch (err) {
+      console.warn('Auto ML prediction error:', err);
+    } finally {
+      setMlLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, notes, appointment]);
+
+  // Keep runMlPredictionWithSpeech ref fresh so the speech recognition closure uses latest
+  const mlPredictFnRef = useRef(runMlPredictionWithSpeech);
+  useEffect(() => { mlPredictFnRef.current = runMlPredictionWithSpeech; }, [runMlPredictionWithSpeech]);
+
   // ─── Fetch appointment + session on mount ──────────────────────────────────
   useEffect(() => {
     let mounted = true;
@@ -386,21 +551,8 @@ export default function ConsultationRoom() {
 
   // ─── ML Disease Prediction ────────────────────────────────────────────────
   const runMlPrediction = async () => {
-    setMlLoading(true);
-    setShowMlPanel(true);
-    try {
-      const chatTranscript = messages.map(m => ({ text: m.text || '' }));
-      const res = await api.post('/consultation/predict-disease', {
-        symptoms: appointment?.symptoms || '',
-        clinicalNotes: notes,
-        chatTranscript
-      });
-      setMlPredictions(res.data);
-    } catch (err) {
-      setAlert({ type: 'error', message: 'ML prediction failed: ' + (err.response?.data?.message || 'Server error') });
-    } finally {
-      setMlLoading(false);
-    }
+    // Include accumulated speech transcript in analysis
+    await runMlPredictionWithSpeech(fullTranscriptRef.current);
   };
 
   const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -418,6 +570,7 @@ export default function ConsultationRoom() {
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'completed' });
       clearInterval(timerRef.current);
       stopJitsi();
+      stopSpeechRecognition();
       navigate(`/prescription/appointment/${appointmentId}`);
     } catch (err) {
       setAlert({ type: 'error', message: 'Failed to complete consultation.' });
@@ -434,6 +587,7 @@ export default function ConsultationRoom() {
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'incomplete' });
       clearInterval(timerRef.current);
       stopJitsi();
+      stopSpeechRecognition();
       navigate('/doctor/appointments');
     } catch (err) {
       setAlert({ type: 'error', message: 'Failed to update status.' });
@@ -718,6 +872,23 @@ export default function ConsultationRoom() {
                 >
                   <RefreshCw className="w-3.5 h-3.5 text-blue-600" /><span>Reload Video</span>
                 </button>
+                {/* Live Speech Recognition toggle — doctor only */}
+                {isDoctor && speechSupported && (
+                  <button
+                    onClick={toggleSpeechRecognition}
+                    className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                      isListening
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-sm shadow-rose-300 animate-pulse'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                    title={isListening ? 'Stop live speech AI analysis' : 'Start live speech AI analysis'}
+                  >
+                    {isListening
+                      ? <><Square className="w-3.5 h-3.5" /><span>Stop AI Listen</span></>
+                      : <><Radio className="w-3.5 h-3.5" /><span>Live AI Listen</span></>
+                    }
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center space-x-2">
@@ -727,7 +898,7 @@ export default function ConsultationRoom() {
                       onClick={runMlPrediction}
                       disabled={mlLoading}
                       className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors disabled:opacity-50"
-                      title="Run ML disease prediction on symptoms and notes"
+                      title="Run ML disease prediction on symptoms, notes and speech"
                     >
                       <Brain className="w-3.5 h-3.5" />
                       <span>{mlLoading ? 'Analyzing...' : 'AI Diagnosis'}</span>
@@ -758,6 +929,76 @@ export default function ConsultationRoom() {
                 )}
               </div>
             </div>
+
+            {/* ── Live Speech Transcript Panel (doctor + speechSupported) ── */}
+            {isDoctor && (isListening || fullTranscript) && (
+              <div className="glass-panel rounded-2xl bg-white shadow-card border border-emerald-100 overflow-hidden">
+                <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    {isListening && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />}
+                    <Activity className="w-4 h-4 text-emerald-600" />
+                    <span className="text-sm font-bold text-emerald-900">
+                      {isListening ? 'Live Speech Capture — AI is listening...' : 'Speech Transcript (Captured)'}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full">
+                      {fullTranscript.split(/\s+/).filter(Boolean).length} words
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <label className="flex items-center space-x-1.5 cursor-pointer">
+                      <span className="text-[11px] font-semibold text-slate-500">Auto-diagnose</span>
+                      <div
+                        onClick={() => setAutoAnalyze(p => !p)}
+                        className={`w-8 h-4 rounded-full transition-colors cursor-pointer ${autoAnalyze ? 'bg-purple-500' : 'bg-slate-300'}`}
+                      >
+                        <div className={`w-3 h-3 bg-white rounded-full shadow mt-0.5 transition-transform ${autoAnalyze ? 'translate-x-4' : 'translate-x-1'}`} />
+                      </div>
+                    </label>
+                    <button onClick={() => { setFullTranscript(''); fullTranscriptRef.current = ''; setSpeechKeywords([]); }} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">Clear</button>
+                  </div>
+                </div>
+
+                <div className="p-3 space-y-2">
+                  {/* Live partial (interim) text */}
+                  {isListening && liveTranscript && (
+                    <p className="text-xs text-slate-400 italic border-l-2 border-emerald-300 pl-2 animate-pulse">
+                      {liveTranscript}
+                    </p>
+                  )}
+
+                  {/* Confirmed transcript */}
+                  {fullTranscript && (
+                    <div className="max-h-24 overflow-y-auto">
+                      <p className="text-xs text-slate-700 leading-relaxed">{fullTranscript}</p>
+                    </div>
+                  )}
+
+                  {/* Detected medical keywords */}
+                  {speechKeywords.length > 0 && (
+                    <div className="pt-1 border-t border-slate-100">
+                      <div className="flex items-center space-x-1.5 mb-1.5">
+                        <Zap className="w-3 h-3 text-purple-500" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Detected Medical Keywords</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {speechKeywords.map((kw, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {autoAnalyze && isListening && (
+                    <p className="text-[10px] text-slate-400 flex items-center space-x-1">
+                      <Brain className="w-3 h-3 text-purple-400" />
+                      <span>AI diagnosis updates automatically 4 seconds after each spoken segment</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ML Disease Prediction Panel */}
             {isDoctor && showMlPanel && (
