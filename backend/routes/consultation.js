@@ -38,7 +38,8 @@ router.post('/start', auth, async (req, res) => {
     if (appointment.status === 'completed') {
       return res.status(400).json({ 
         message: 'This consultation has already been completed and concluded. Rejoining is not permitted.',
-        isCompleted: true
+        isCompleted: true,
+        redirectUrl: `/doctor/prescription/${appointmentId}`
       });
     }
     // 'incomplete' appointments are allowed to be restarted by the doctor
@@ -72,7 +73,7 @@ router.post('/start', auth, async (req, res) => {
         // Doctor is restarting/resuming consultation: reactivate the existing session to avoid duplicate index collisions
         session.status = 'in-progress';
         session.startedAt = session.startedAt || new Date();
-        session.endedAt = undefined;
+        session.endedAt = null;
         if (!Array.isArray(session.networkEvents)) session.networkEvents = [];
         session.networkEvents.push({
           event: 'reconnected',
@@ -125,11 +126,15 @@ router.post('/start', auth, async (req, res) => {
       await session.save();
     }
 
-    // Update appointment status to in-progress if confirmed, pending, or incomplete (restart)
+    // Atomically update appointment status to in-progress if confirmed, pending, or incomplete (restart)
+    // Avoids Mongoose VersionError and prevents 500 errors on restart
     if (['pending', 'confirmed', 'incomplete'].includes(appointment.status)) {
-      appointment.status = 'in-progress';
-      appointment.consultationSession = session._id;
-      await appointment.save();
+      await Appointment.findByIdAndUpdate(appointmentId, {
+        $set: {
+          status: 'in-progress',
+          consultationSession: session._id
+        }
+      });
     }
 
     // Create audit log safely

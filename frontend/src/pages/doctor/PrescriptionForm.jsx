@@ -1,13 +1,14 @@
 ﻿import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   FileText, Plus, Trash2, Send, Loader2, CheckCircle, Shield, 
   ArrowLeft, Pill, ShieldCheck, User, Calendar, Clock, AlertCircle,
-  Search, ShieldAlert, Sparkles, BookOpen, ExternalLink, Printer
+  Search, ShieldAlert, Sparkles, BookOpen, ExternalLink, Printer, Activity
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
+import ActionLoaderModal from '../../components/ActionLoaderModal';
 import DrugInfoModal from '../../components/DrugInfoModal';
 import DailyPillSchedule from '../../components/DailyPillSchedule';
 import QRCodeBadge from '../../components/QRCodeBadge';
@@ -32,6 +33,7 @@ const emptyMed = {
 export default function PrescriptionForm() {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLanguage();
 
   const [activeAptId, setActiveAptId] = useState(appointmentId && appointmentId !== 'new' ? appointmentId : '');
@@ -45,6 +47,13 @@ export default function PrescriptionForm() {
   const [generating, setGenerating] = useState(false);
   const [sendingPharmacy, setSendingPharmacy] = useState(false);
   const [alert, setAlert] = useState(null);
+  const [processModal, setProcessModal] = useState({
+    isOpen: false,
+    title: '',
+    subtitle: '',
+    stage: '',
+    icon: null
+  });
 
   // E-Prescription Suite additions
   const [templates, setTemplates] = useState([]);
@@ -59,6 +68,29 @@ export default function PrescriptionForm() {
   // AI Diagnostic Suggestions state
   const [aiPredictions, setAiPredictions] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+
+  // Sync route param with active appointment
+  useEffect(() => {
+    if (appointmentId && appointmentId !== 'new') {
+      setActiveAptId(appointmentId);
+    }
+  }, [appointmentId]);
+
+  // Handle incoming consultation notes and AI suggestions transferred from video call
+  useEffect(() => {
+    if (location.state?.consultationNotes) {
+      setAdditionalNotes(prev => prev ? `${prev}\n\n[Consultation Notes]:\n${location.state.consultationNotes}` : `[Consultation Notes]:\n${location.state.consultationNotes}`);
+    }
+    if (location.state?.suggestedDiagnosis) {
+      setDiagnosis(prev => prev || location.state.suggestedDiagnosis);
+    }
+    if (location.state?.patientName) {
+      setAlert({
+        type: 'info',
+        message: `Consultation finalized for ${location.state.patientName}. Create and sign the official e-prescription below.`
+      });
+    }
+  }, [location.state]);
 
   // Load all doctor appointments & templates on mount
   useEffect(() => {
@@ -235,6 +267,13 @@ export default function PrescriptionForm() {
 
     setGenerating(true);
     setAlert(null);
+    setProcessModal({
+      isOpen: true,
+      title: 'Generating E-Prescription',
+      subtitle: 'Applying SHA-256 digital signature and securing pharmacy record...',
+      stage: 'Signing prescription record',
+      icon: ShieldCheck
+    });
     try {
       const res = await api.post('/prescriptions', { 
         appointmentId: activeAptId, 
@@ -248,6 +287,7 @@ export default function PrescriptionForm() {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to generate prescription.' });
     } finally {
       setGenerating(false);
+      setProcessModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -255,6 +295,13 @@ export default function PrescriptionForm() {
     if (!existingPrescription) return;
     setSendingPharmacy(true);
     setAlert(null);
+    setProcessModal({
+      isOpen: true,
+      title: 'Dispatching to Pharmacy Network',
+      subtitle: 'Transmitting encrypted prescription to partner pharmacy fulfillment (FR-8)...',
+      stage: 'Routing to partner pharmacy network',
+      icon: Send
+    });
     try {
       const res = await api.post(`/prescriptions/${existingPrescription._id}/send-to-pharmacy`);
       setExistingPrescription(p => ({ 
@@ -267,14 +314,27 @@ export default function PrescriptionForm() {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to send to pharmacy.' });
     } finally {
       setSendingPharmacy(false);
+      setProcessModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative w-16 h-16 mb-4 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping opacity-60" />
+            <div className="absolute inset-0 rounded-full border-3 border-transparent border-t-blue-600 border-r-indigo-500 animate-spin" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30">
+              <Activity className="w-5 h-5 animate-pulse" />
+            </div>
+          </div>
+          <h2 className="text-base font-bold text-slate-900 tracking-tight">
+            Loading E-Prescription Suite
+          </h2>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm">
+            Retrieving clinical consultation records and drug formulary...
+          </p>
         </div>
       </Layout>
     );
@@ -282,6 +342,7 @@ export default function PrescriptionForm() {
 
   return (
     <Layout>
+      <ActionLoaderModal {...processModal} />
       <div className="space-y-6 max-w-4xl mx-auto">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 

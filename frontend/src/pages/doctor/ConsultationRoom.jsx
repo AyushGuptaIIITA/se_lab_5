@@ -5,10 +5,11 @@ import {
   Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
   ExternalLink, CheckCircle, ArrowLeft, XCircle, Calendar,
   Brain, TrendingUp, AlertCircle, Zap, Radio, Square, Activity,
-  ScreenShare, ShieldCheck, Sparkles
+  ScreenShare, ShieldCheck, Sparkles, Stethoscope
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
+import ActionLoaderModal from '../../components/ActionLoaderModal';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -29,6 +30,13 @@ export default function ConsultationRoom() {
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [processModal, setProcessModal] = useState({
+    isOpen: false,
+    title: '',
+    subtitle: '',
+    stage: '',
+    icon: null
+  });
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [peerConnected, setPeerConnected] = useState(false);
@@ -652,6 +660,13 @@ export default function ConsultationRoom() {
   const startSession = async () => {
     setStarting(true);
     setAlert(null);
+    setProcessModal({
+      isOpen: true,
+      title: 'Connecting Video Consultation',
+      subtitle: 'Starting encrypted session and establishing live media stream...',
+      stage: 'Initiating WebRTC channel',
+      icon: Video
+    });
     try {
       const res = await api.post('/consultation/start', { appointmentId });
       const sess = res.data.session;
@@ -662,9 +677,17 @@ export default function ConsultationRoom() {
       setAlert({ type: 'success', message: 'Live consultation started. HD Video connecting...' });
       setTimeout(() => startNativeCall(), 400);
     } catch (err) {
+      if (err.response?.data?.isCompleted || appointment?.status === 'completed') {
+        setAppointment(prev => prev ? { ...prev, status: 'completed' } : prev);
+        if (isDoctor) {
+          navigate(`/doctor/prescription/${appointmentId}`);
+          return;
+        }
+      }
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to start consultation.' });
     } finally {
       setStarting(false);
+      setProcessModal(prev => ({ ...prev, isOpen: false }));
     }
   };
 
@@ -696,24 +719,54 @@ export default function ConsultationRoom() {
   // ─── Doctor: Mark as Completed ────────────────────────────────────────────
   const markAsCompleted = async () => {
     setEnding(true);
+    setProcessModal({
+      isOpen: true,
+      title: 'Finalizing Consultation',
+      subtitle: 'Ending live video call and saving clinical notes...',
+      stage: 'Closing session & updating appointment',
+      icon: CheckCircle
+    });
     try {
       if (session?._id) {
         await api.post(`/consultation/${session._id}/end`, {
           consultationNotes: notes,
-          duration: Math.floor(elapsed / 60) || 1
+          duration: Math.max(1, Math.floor(elapsed / 60))
         });
       }
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'completed' });
       clearInterval(timerRef.current);
       stopNativeCall();
       stopSpeechRecognition();
-      // Don't auto-navigate to prescription — stay on completed screen so doctor can choose
-      // whether to write a prescription or go back to appointments.
-      setSession(prev => ({ ...prev, status: 'completed' }));
+
+      setAppointment(prev => prev ? { ...prev, status: 'completed' } : prev);
+      setSession(prev => prev ? { ...prev, status: 'completed' } : prev);
+
+      // Transition loader to prescription studio redirect
+      setProcessModal({
+        isOpen: true,
+        title: 'Opening Prescription Studio',
+        subtitle: `Redirecting to write prescription for ${patientName}...`,
+        stage: 'Transferring clinical notes & AI suggestions',
+        icon: FileText
+      });
+
+      // Navigate to prescription form with full context
+      setTimeout(() => {
+        navigate(`/doctor/prescription/${appointmentId}`, {
+          state: {
+            consultationNotes: notes,
+            patientName,
+            appointmentId,
+            symptoms: appointment?.symptoms || '',
+            suggestedDiagnosis: mlPredictions?.suggestedDiagnosis || ''
+          }
+        });
+      }, 700);
+
     } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to complete consultation.' });
-    } finally {
       setEnding(false);
+      setProcessModal(prev => ({ ...prev, isOpen: false }));
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to complete consultation.' });
     }
   };
 
@@ -721,12 +774,19 @@ export default function ConsultationRoom() {
   const markAsIncomplete = async () => {
     if (!window.confirm('Mark this consultation as incomplete?')) return;
     setEnding(true);
+    setProcessModal({
+      isOpen: true,
+      title: 'Updating Consultation Status',
+      subtitle: 'Marking session as incomplete and preserving notes...',
+      stage: 'Syncing with appointments',
+      icon: XCircle
+    });
     try {
       if (session?._id) {
         try {
           await api.post(`/consultation/${session._id}/end`, {
             consultationNotes: notes,
-            duration: Math.floor(elapsed / 60) || 1,
+            duration: Math.max(1, Math.floor(elapsed / 60)),
             isIncomplete: true
           });
         } catch {}
@@ -735,17 +795,18 @@ export default function ConsultationRoom() {
       clearInterval(timerRef.current);
       stopNativeCall();
       stopSpeechRecognition();
+      setAppointment(prev => prev ? { ...prev, status: 'incomplete' } : prev);
       navigate('/doctor/appointments');
     } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to update status.' });
-    } finally {
       setEnding(false);
+      setProcessModal(prev => ({ ...prev, isOpen: false }));
+      setAlert({ type: 'error', message: 'Failed to update status.' });
     }
   };
 
-  // Completed is strictly when appointment.status === 'completed'
+  // Completed is strictly when appointment.status === 'completed' or session.status === 'completed'
   // Incomplete appointments are NEVER blocked — doctor can restart, patient can rejoin
-  const isCompleted = appointment?.status === 'completed';
+  const isCompleted = appointment?.status === 'completed' || session?.status === 'completed';
 
   const doctorName = appointment?.doctor?.name?.startsWith('Dr.')
     ? appointment?.doctor?.name
@@ -756,6 +817,7 @@ export default function ConsultationRoom() {
   if (isCompleted) {
     return (
       <Layout>
+        <ActionLoaderModal {...processModal} />
         <div className="max-w-2xl mx-auto py-12 px-4 text-center">
           <div className="glass-panel p-8 rounded-3xl bg-white shadow-xl space-y-5 border border-slate-200">
             <div className="w-16 h-16 rounded-3xl flex items-center justify-center mx-auto shadow-sm bg-emerald-50 border border-emerald-200 text-emerald-600">
@@ -810,8 +872,23 @@ export default function ConsultationRoom() {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <div className="min-h-[55vh] flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative w-20 h-20 mb-5 flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping opacity-60" />
+            <div className="absolute inset-0 rounded-full border-3 border-transparent border-t-blue-600 border-r-indigo-500 animate-spin" />
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+              <Activity className="w-6 h-6 animate-pulse" />
+            </div>
+          </div>
+          <h2 className="text-lg font-black text-slate-900 tracking-tight">
+            Preparing Consultation Room
+          </h2>
+          <p className="text-xs text-slate-500 mt-1.5 max-w-sm leading-relaxed">
+            Establishing secure encrypted connection with TeleMed clinical servers...
+          </p>
+          <div className="mt-5 w-44 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full w-2/3 animate-[pulse_1.5s_ease-in-out_infinite]" />
+          </div>
         </div>
       </Layout>
     );
@@ -822,6 +899,7 @@ export default function ConsultationRoom() {
     const isPaused = appointment?.status === 'incomplete';
     return (
       <Layout>
+        <ActionLoaderModal {...processModal} />
         <div className="max-w-2xl mx-auto py-8 px-4 space-y-6">
           <div className="text-center space-y-2">
             <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-bold border ${
@@ -888,6 +966,7 @@ export default function ConsultationRoom() {
     const isPaused = appointment?.status === 'incomplete';
     return (
       <Layout>
+        <ActionLoaderModal {...processModal} />
         <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
           {isPaused && (
             <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 flex items-center space-x-2.5">
@@ -964,6 +1043,7 @@ export default function ConsultationRoom() {
   // ─── ACTIVE CONSULTATION ROOM ─────────────────────────────────────────────
   return (
     <Layout>
+      <ActionLoaderModal {...processModal} />
       <div className="space-y-4 max-w-7xl mx-auto px-2">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
