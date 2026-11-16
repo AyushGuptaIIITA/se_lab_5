@@ -443,7 +443,7 @@ export default function ConsultationRoom() {
           setMessages(sess.messages || []);
           if (sess.consultationNotes) setNotes(sess.consultationNotes);
 
-          if (sess.status === 'completed') { setLoading(false); return; }
+          if (['completed', 'ended', 'disconnected'].includes(sess.status)) { setLoading(false); return; }
 
           if (sess.startedAt) {
             setElapsed(Math.max(0, Math.floor((Date.now() - new Date(sess.startedAt)) / 1000)));
@@ -655,7 +655,7 @@ export default function ConsultationRoom() {
     }
   };
 
-  const isCompleted = appointment?.status === 'completed' || session?.status === 'completed';
+  const isCompleted = appointment?.status === 'completed' || ['completed', 'ended'].includes(session?.status);
   const isIncomplete = appointment?.status === 'incomplete';
 
   const doctorName = appointment?.doctor?.name?.startsWith('Dr.')

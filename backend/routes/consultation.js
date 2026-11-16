@@ -176,6 +176,7 @@ router.get('/appointment/:appointmentId', auth, async (req, res) => {
     const session = await ConsultationSession.findOne({
       appointment: req.params.appointmentId
     })
+      .sort({ createdAt: -1 })
       .populate('patient', 'name email phone')
       .populate('doctor', 'name email specialization');
 
