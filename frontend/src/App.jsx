@@ -1,7 +1,7 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { LanguageProvider } from './contexts/LanguageContext';
+import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { SocketProvider } from './contexts/SocketContext';
 
 // Auth pages
@@ -83,8 +83,9 @@ function PublicRoute({ children }) {
 
 // ─── App Shell ───────────────────────────────────────────────────────────────
 function AppRoutes() {
+  const { lang } = useLanguage();
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+    <div key={lang} className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       <Routes>
         {/* ── Public ── */}
         <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />

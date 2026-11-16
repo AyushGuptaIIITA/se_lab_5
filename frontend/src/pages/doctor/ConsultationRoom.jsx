@@ -197,6 +197,14 @@ export default function ConsultationRoom() {
         }, 1500);
       });
 
+      // Handle connection failure — show retry alert
+      jApi.addEventListener('connectionFailed', () => {
+        setAlert({
+          type: 'error',
+          message: 'Video connection failed. This may be a network/firewall issue. Click "Reconnect Video" to retry.'
+        });
+      });
+
       // Handle call end
       jApi.addEventListener('readyToClose', () => {
         if (isDoctor) {
