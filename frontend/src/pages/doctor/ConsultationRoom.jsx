@@ -25,6 +25,7 @@ export default function ConsultationRoom() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [futureDate, setFutureDate] = useState(null); // { date: ISO string } if appointment is in future
   const [ending, setEnding] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -416,6 +417,19 @@ export default function ConsultationRoom() {
         const appt = apptRes.data.appointment;
         setAppointment(appt);
 
+        // Check if appointment is in the future (non-admin guard)
+        if (user?.role !== 'admin') {
+          const apptDateUTC = new Date(appt.date);
+          apptDateUTC.setUTCHours(0, 0, 0, 0);
+          const todayUTC = new Date();
+          todayUTC.setUTCHours(0, 0, 0, 0);
+          if (apptDateUTC > todayUTC) {
+            setFutureDate({ date: appt.date });
+            setLoading(false);
+            return;
+          }
+        }
+
         if (['completed', 'incomplete'].includes(appt.status)) {
           setLoading(false);
           return;
@@ -526,7 +540,11 @@ export default function ConsultationRoom() {
       setAlert({ type: 'success', message: 'Live consultation started. Video connecting...' });
       setTimeout(() => mountJitsi(sess), 400);
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to start consultation.' });
+      if (err.response?.data?.isFutureDate) {
+        setFutureDate({ date: err.response.data.appointmentDate });
+      } else {
+        setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to start consultation.' });
+      }
     } finally {
       setStarting(false);
     }
@@ -658,6 +676,49 @@ export default function ConsultationRoom() {
       <Layout>
         <div className="flex items-center justify-center h-64">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </Layout>
+    );
+  }
+
+  // ─── Future Date Guard ───────────────────────────────────────────────────────
+  if (futureDate) {
+    const apptDate = new Date(futureDate.date);
+    const formatted = apptDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4">
+          <div className="bg-white rounded-3xl shadow-xl border border-blue-100 p-10 max-w-md w-full space-y-5">
+            <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
+              <Calendar className="w-10 h-10 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-slate-900">Not Yet Open</h2>
+              <p className="text-sm text-slate-500 mt-1">This consultation room is not available yet.</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl px-6 py-4">
+              <p className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-1">Your Appointment Date</p>
+              <p className="text-xl font-black text-blue-900">{formatted}</p>
+            </div>
+            <p className="text-xs text-slate-500">
+              The consultation room will automatically become available on <strong>{formatted}</strong>.
+              Please come back on that day to join your session.
+            </p>
+            {appointment && (
+              <div className="text-left text-xs text-slate-600 bg-slate-50 rounded-xl p-4 space-y-1">
+                <p><span className="font-bold">Doctor:</span> {appointment.doctor?.name || 'Assigned Doctor'}</p>
+                <p><span className="font-bold">Patient:</span> {appointment.patient?.name || 'Patient'}</p>
+                {appointment.symptoms && <p><span className="font-bold">Symptoms:</span> {appointment.symptoms}</p>}
+              </div>
+            )}
+            <Link
+              to={isDoctor ? '/doctor/appointments' : '/patient/appointments'}
+              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back to Appointments</span>
+            </Link>
+          </div>
         </div>
       </Layout>
     );

@@ -18,7 +18,7 @@ export default function DoctorAppointments() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
   const [actionLoading, setActionLoading] = useState('');
   const [alert, setAlert] = useState(null);
 
@@ -154,14 +154,30 @@ export default function DoctorAppointments() {
                 className="glass-input w-full pl-10 pr-4 py-2 rounded-xl text-xs"
               />
             </div>
-            <div>
+            <div className="flex items-center gap-2">
               <input
                 type="date"
                 value={dateFilter}
                 onChange={e => setDateFilter(e.target.value)}
-                className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white"
+                className="glass-input px-3 py-2 rounded-xl text-xs bg-white"
                 title="Filter by appointment date"
               />
+              <button
+                onClick={() => setDateFilter(new Date().toISOString().split('T')[0])}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 whitespace-nowrap transition-colors"
+                title="Jump to today"
+              >
+                Today
+              </button>
+              {dateFilter && (
+                <button
+                  onClick={() => setDateFilter('')}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 whitespace-nowrap transition-colors"
+                  title="Show all dates"
+                >
+                  All Dates
+                </button>
+              )}
             </div>
           </div>
         </div>
