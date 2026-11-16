@@ -4,6 +4,7 @@ const ConsultationSession = require('../models/ConsultationSession');
 const Appointment = require('../models/Appointment');
 const { auth, doctorOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
+const emit = require('../utils/emit');
 
 const router = express.Router();
 
@@ -131,6 +132,14 @@ router.post('/start', auth, async (req, res) => {
       message: 'Consultation session started.',
       session
     });
+
+    // Real-time: notify patient that doctor started the session
+    emit(req, 'consultation:started', {
+      appointmentId: appointmentId.toString(),
+      sessionId: session._id.toString(),
+      doctorId: appointment.doctor._id.toString(),
+      patientId: appointment.patient._id.toString()
+    });
   } catch (err) {
     console.error('Start consultation error:', err);
     res.status(500).json({ message: 'Server error starting consultation.' });
@@ -223,6 +232,14 @@ router.post('/:sessionId/end', auth, doctorOnly, async (req, res) => {
       message: 'Consultation session ended.',
       session
     });
+
+    // Real-time: notify patient that consultation has ended
+    emit(req, 'consultation:ended', {
+      appointmentId: session.appointment.toString(),
+      sessionId: session._id.toString(),
+      doctorId: session.doctor.toString(),
+      patientId: session.patient.toString()
+    });
   } catch (err) {
     console.error('End consultation error:', err);
     res.status(500).json({ message: 'Server error ending consultation.' });
@@ -300,6 +317,15 @@ router.post('/:sessionId/message', auth, async (req, res) => {
       message: 'Message sent.',
       chatMessage: newMessage,
       messages: session.messages
+    });
+
+    // Real-time: push new chat message to both participants
+    emit(req, 'consultation:message', {
+      appointmentId: session.appointment.toString(),
+      sessionId: session._id.toString(),
+      doctorId: session.doctor.toString(),
+      patientId: session.patient.toString(),
+      chatMessage: newMessage
     });
   } catch (err) {
     console.error('Send message error:', err);

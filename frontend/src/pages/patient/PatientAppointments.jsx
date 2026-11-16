@@ -10,9 +10,11 @@ import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate, isAppointmentToday } from '../../utils/dateUtils';
+import { useSocket } from '../../contexts/SocketContext';
 
 export default function PatientAppointments() {
   const { t } = useLanguage();
+  const { subscribe } = useSocket();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -34,6 +36,15 @@ export default function PatientAppointments() {
 
   useEffect(() => {
     fetchAppointments();
+  }, []);
+
+  // Real-time: refresh when appointment status changes or new prescription arrives
+  useEffect(() => {
+    const unsub1 = subscribe('appointment:updated',  () => fetchAppointments());
+    const unsub2 = subscribe('consultation:started', () => fetchAppointments());
+    const unsub3 = subscribe('consultation:ended',   () => fetchAppointments());
+    return () => { unsub1(); unsub2(); unsub3(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCancel = async (id) => {

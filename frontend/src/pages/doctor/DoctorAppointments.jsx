@@ -11,9 +11,11 @@ import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
+import { useSocket } from '../../contexts/SocketContext';
 
 export default function DoctorAppointments() {
   const { t } = useLanguage();
+  const { subscribe } = useSocket();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -36,6 +38,14 @@ export default function DoctorAppointments() {
 
   useEffect(() => {
     fetchAppointments();
+  }, []);
+
+  // Real-time: refresh list when any appointment changes
+  useEffect(() => {
+    const unsub1 = subscribe('appointment:new',     () => fetchAppointments());
+    const unsub2 = subscribe('appointment:updated', () => fetchAppointments());
+    return () => { unsub1(); unsub2(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStatusUpdate = async (id, status) => {

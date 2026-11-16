@@ -12,12 +12,14 @@ import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
+import { useSocket } from '../../contexts/SocketContext';
 
 export default function ConsultationRoom() {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { subscribe, joinAppointmentRoom } = useSocket();
 
   const isDoctor = user?.role === 'doctor';
 
@@ -112,8 +114,8 @@ export default function ConsultationRoom() {
 
     container.innerHTML = '';
 
-    // Unique room per appointment — same room name for doctor and patient ensures two-way
-    const roomName = 'TeleMed-Hospital-Appt-' + appointmentId;
+    // Unique room — lowercase alphanumeric only (Jitsi requirement), same for doctor + patient
+    const roomName = ('telemed' + appointmentId).toLowerCase().replace(/[^a-z0-9]/g, '');
 
     try {
       const jApi = new window.JitsiMeetExternalAPI('meet.jit.si', {
@@ -128,31 +130,30 @@ export default function ConsultationRoom() {
           email: user?.email || ''
         },
         configOverwrite: {
-          // Both participants start with audio and video ON
           startWithAudioMuted: false,
           startWithVideoMuted: false,
-          // Skip the pre-join/lobby screen — go straight into the call
           prejoinPageEnabled: false,
           prejoinConfig: { enabled: false },
-          // Disable lobby so both sides join immediately into the same room
           lobby: { autoKnock: false, enableChat: false },
-          // Show tiles side-by-side by default
           defaultLocalDisplayName: isDoctor ? 'Doctor' : 'Patient',
           disableDeepLinking: true,
           enableClosePage: false,
-          // Essential: allow both participants to share cameras
           resolution: 720,
           constraints: {
             video: { height: { ideal: 720, max: 720, min: 240 } }
           },
-          // Tile view shows both cameras side by side
           tileView: { numberOfVisibleTiles: 2 },
           filmstrip: { disableResizable: false },
-          // Audio settings
           enableNoAudioDetection: true,
           enableNoisyMicDetection: true,
-          // No watermarks
           disableRemoteMute: false,
+          // Reliable STUN servers to fix connection issues
+          p2p: { enabled: true, stunServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+          ]},
+          useStunTurn: true,
         },
         interfaceConfigOverwrite: {
           SHOW_JITSI_WATERMARK: false,
@@ -477,10 +478,29 @@ export default function ConsultationRoom() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, session?._id]);
 
-  // ─── Patient waiting room: poll until doctor starts ───────────────────────
+  // ─── Patient waiting room: socket-first, poll as fallback ─────────────────
   useEffect(() => {
     if (isDoctor || session) return;
 
+    // Join the appointment room so server can push events to us
+    joinAppointmentRoom(appointmentId);
+
+    // Socket: instant notification when doctor starts
+    const unsub = subscribe('consultation:started', (data) => {
+      if (data?.appointmentId !== appointmentId) return;
+      api.get(`/consultation/appointment/${appointmentId}`)
+        .then(res => {
+          if (res.data?.session?.status === 'in-progress') {
+            const activeSess = res.data.session;
+            setSession(activeSess);
+            sessionRef.current = activeSess;
+            setMessages(activeSess.messages || []);
+            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+          }
+        }).catch(() => {});
+    });
+
+    // Polling fallback every 5s (reduced from 2.5s since socket handles fast path)
     const poll = setInterval(async () => {
       try {
         const res = await api.get(`/consultation/appointment/${appointmentId}`);
@@ -493,30 +513,49 @@ export default function ConsultationRoom() {
           clearInterval(poll);
         }
       } catch {}
-    }, 2500);
+    }, 5000);
 
-    return () => clearInterval(poll);
+    return () => { unsub(); clearInterval(poll); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDoctor, session, appointmentId]);
 
-  // ─── Poll for new messages when session is active ─────────────────────────
+  // ─── Real-time: chat messages + consultation ended via socket ──────────────
   useEffect(() => {
     if (!session?._id || session?.status === 'completed') return;
 
+    joinAppointmentRoom(appointmentId);
+
+    // Socket: instant new message
+    const unsubMsg = subscribe('consultation:message', (data) => {
+      if (data?.sessionId !== session._id) return;
+      if (data?.chatMessage) setMessages(prev => [...prev, data.chatMessage]);
+    });
+
+    // Socket: consultation ended (patient side)
+    const unsubEnd = subscribe('consultation:ended', (data) => {
+      if (data?.appointmentId !== appointmentId) return;
+      setSession(prev => prev ? { ...prev, status: 'completed' } : prev);
+      stopJitsi();
+    });
+
+    // Polling fallback every 8s — much less frequent now
     pollingRef.current = setInterval(async () => {
       try {
         const res = await api.get(`/consultation/${session._id}`);
-        if (res.data?.session?.messages) {
-          setMessages(res.data.session.messages);
-        }
+        if (res.data?.session?.messages) setMessages(res.data.session.messages);
         if (res.data?.session?.status === 'completed') {
           setSession(res.data.session);
           stopJitsi();
         }
       } catch {}
-    }, 3000);
+    }, 8000);
 
-    return () => clearInterval(pollingRef.current);
+    return () => {
+      unsubMsg();
+      unsubEnd();
+      clearInterval(pollingRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?._id, session?.status]);
 
   // ─── Auto-scroll chat ─────────────────────────────────────────────────────

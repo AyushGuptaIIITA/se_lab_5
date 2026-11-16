@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const User = require('../models/User');
 const { auth, patientOnly, doctorOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
+const emit = require('../utils/emit');
 
 const router = express.Router();
 
@@ -95,6 +96,13 @@ router.post('/', auth, patientOnly, async (req, res) => {
     res.status(201).json({
       message: 'Appointment booked successfully.',
       appointment: populatedAppointment
+    });
+
+    // Real-time: notify doctor of new appointment
+    emit(req, 'appointment:new', {
+      appointmentId: appointment._id.toString(),
+      doctorId: appointment.doctor.toString(),
+      patientId: appointment.patient.toString()
     });
   } catch (err) {
     console.error('Book appointment error:', err);
@@ -253,6 +261,14 @@ router.patch('/:id/status', auth, async (req, res) => {
     res.json({
       message: `Appointment ${status} successfully.`,
       appointment
+    });
+
+    // Real-time: notify both doctor and patient of status change
+    emit(req, 'appointment:updated', {
+      appointmentId: appointment._id.toString(),
+      doctorId: appointment.doctor._id.toString(),
+      patientId: appointment.patient._id.toString(),
+      status
     });
   } catch (err) {
     console.error('Update appointment status error:', err);

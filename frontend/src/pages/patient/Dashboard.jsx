@@ -8,6 +8,7 @@ import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
+import { useSocket } from '../../contexts/SocketContext';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
   return (
@@ -26,6 +27,7 @@ function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
 export default function PatientDashboard() {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { subscribe } = useSocket();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
@@ -41,6 +43,16 @@ export default function PatientDashboard() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Real-time: refresh on appointment updates and prescription events
+  useEffect(() => {
+    const u1 = subscribe('appointment:updated',  () => fetchData());
+    const u2 = subscribe('consultation:started', () => fetchData());
+    const u3 = subscribe('consultation:ended',   () => fetchData());
+    const u4 = subscribe('prescription:new',     () => fetchData());
+    return () => { u1(); u2(); u3(); u4(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const upcoming = appointments.filter(a => ['pending', 'confirmed'].includes(a.status)).slice(0, 5);
   const completed = appointments.filter(a => a.status === 'completed');

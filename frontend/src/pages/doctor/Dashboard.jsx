@@ -8,6 +8,7 @@ import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
+import { useSocket } from '../../contexts/SocketContext';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
   return (
@@ -26,6 +27,7 @@ function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
 export default function DoctorDashboard() {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { subscribe } = useSocket();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
@@ -44,6 +46,16 @@ export default function DoctorDashboard() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Real-time: refresh dashboard on appointment or consultation events
+  useEffect(() => {
+    const u1 = subscribe('appointment:new',      () => fetchData());
+    const u2 = subscribe('appointment:updated',  () => fetchData());
+    const u3 = subscribe('consultation:started', () => fetchData());
+    const u4 = subscribe('consultation:ended',   () => fetchData());
+    return () => { u1(); u2(); u3(); u4(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const todayApts = appointments.filter(a => new Date(a.date).toISOString().split('T')[0] === today);
   const pending = appointments.filter(a => a.status === 'pending');

@@ -7,6 +7,7 @@ const { auth, doctorOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 const { sendToPharmacy } = require('../utils/pharmacyAdapter');
 const { CLINICAL_DRUGS, DRUG_INTERACTIONS, CLINICAL_TEMPLATES } = require('../utils/drugData');
+const emit = require('../utils/emit');
 
 const router = express.Router();
 
@@ -209,6 +210,15 @@ router.post('/', auth, doctorOnly, async (req, res) => {
       message: 'Prescription created successfully.',
       prescription
     });
+
+    // Real-time: notify patient that prescription is ready
+    if (prescription.patient) {
+      emit(req, 'prescription:new', {
+        patientId: prescription.patient.toString(),
+        doctorId: req.user._id.toString(),
+        prescriptionId: prescription._id.toString()
+      });
+    }
   } catch (err) {
     console.error('Create prescription error:', err);
     res.status(500).json({ message: 'Server error creating prescription.' });

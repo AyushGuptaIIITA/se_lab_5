@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
+import { SocketProvider } from './contexts/SocketContext';
 
 // Auth pages
 import Login from './pages/Login';
@@ -135,9 +136,11 @@ export default function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
+        <SocketProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </SocketProvider>
       </LanguageProvider>
     </AuthProvider>
   );
