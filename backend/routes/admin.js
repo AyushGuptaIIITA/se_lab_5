@@ -5,7 +5,8 @@ const Appointment = require('../models/Appointment');
 const Prescription = require('../models/Prescription');
 const ConsultationSession = require('../models/ConsultationSession');
 const AuditLog = require('../models/AuditLog');
-const { auth, adminOnly } = require('../middleware/auth');
+const AdminDelegation = require('../models/AdminDelegation');
+const { auth, adminOnly, strictAdminOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 
 const router = express.Router();
@@ -304,6 +305,136 @@ router.get('/audit-logs', auth, adminOnly, async (req, res) => {
   } catch (err) {
     console.error('Admin audit logs error:', err);
     res.status(500).json({ message: 'Server error fetching audit logs.' });
+  }
+});
+
+// ─── ADMIN DELEGATION ROUTES ───────────────────────────────────────────────
+
+// POST /api/admin/delegate — Strict admin grants temporary admin rights to another user
+router.post('/delegate', auth, strictAdminOnly, async (req, res) => {
+  try {
+    const { userId, reason, startDate, endDate } = req.body;
+
+    if (!userId || !reason || !startDate || !endDate) {
+      return res.status(400).json({ message: 'userId, reason, startDate, and endDate are required.' });
+    }
+
+    const targetUser = await User.findById(userId).select('-password');
+    if (!targetUser) return res.status(404).json({ message: 'User not found.' });
+
+    if (targetUser.role === 'admin') {
+      return res.status(400).json({ message: 'User is already an admin.' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start) || isNaN(end) || end <= start) {
+      return res.status(400).json({ message: 'Invalid date range.' });
+    }
+
+    // Deactivate any existing active delegation for this user
+    await AdminDelegation.updateMany(
+      { delegatedTo: userId, isActive: true },
+      { isActive: false, revokedAt: new Date(), revokedBy: req.user._id }
+    );
+
+    const delegation = new AdminDelegation({
+      delegatedTo: userId,
+      delegatedBy: req.user._id,
+      reason,
+      startDate: start,
+      endDate: end,
+      isActive: true
+    });
+
+    await delegation.save();
+
+    await createAuditLog(
+      'ADMIN_ROLE_DELEGATED',
+      req.user._id,
+      req.user.role,
+      req.user.name,
+      'AdminDelegation',
+      delegation._id,
+      { delegatedTo: targetUser.name, reason, startDate, endDate },
+      req.ip
+    );
+
+    res.status(201).json({
+      message: `Admin access delegated to ${targetUser.name} until ${end.toLocaleDateString()}.`,
+      delegation
+    });
+  } catch (err) {
+    console.error('Delegate admin error:', err);
+    res.status(500).json({ message: 'Server error creating delegation.' });
+  }
+});
+
+// GET /api/admin/delegates — List all active/past delegations
+router.get('/delegates', auth, adminOnly, async (req, res) => {
+  try {
+    const now = new Date();
+    const delegations = await AdminDelegation.find()
+      .populate('delegatedTo', 'name email role')
+      .populate('delegatedBy', 'name email')
+      .populate('revokedBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    // Auto-expire passed delegations in DB
+    const expiredIds = delegations
+      .filter(d => d.isActive && d.endDate < now)
+      .map(d => d._id);
+
+    if (expiredIds.length > 0) {
+      await AdminDelegation.updateMany(
+        { _id: { $in: expiredIds } },
+        { isActive: false }
+      );
+    }
+
+    // Re-fetch with updated status
+    const updated = await AdminDelegation.find()
+      .populate('delegatedTo', 'name email role')
+      .populate('delegatedBy', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.json({ delegations: updated });
+  } catch (err) {
+    console.error('Get delegations error:', err);
+    res.status(500).json({ message: 'Server error fetching delegations.' });
+  }
+});
+
+// DELETE /api/admin/delegate/:id — Revoke a delegation (strict admin only)
+router.delete('/delegate/:id', auth, strictAdminOnly, async (req, res) => {
+  try {
+    const delegation = await AdminDelegation.findById(req.params.id)
+      .populate('delegatedTo', 'name email');
+
+    if (!delegation) return res.status(404).json({ message: 'Delegation not found.' });
+    if (!delegation.isActive) return res.status(400).json({ message: 'Delegation is already inactive.' });
+
+    delegation.isActive = false;
+    delegation.revokedAt = new Date();
+    delegation.revokedBy = req.user._id;
+    await delegation.save();
+
+    await createAuditLog(
+      'ADMIN_ROLE_REVOKED',
+      req.user._id,
+      req.user.role,
+      req.user.name,
+      'AdminDelegation',
+      delegation._id,
+      { revokedFrom: delegation.delegatedTo?.name },
+      req.ip
+    );
+
+    res.json({ message: `Admin delegation revoked from ${delegation.delegatedTo?.name}.`, delegation });
+  } catch (err) {
+    console.error('Revoke delegation error:', err);
+    res.status(500).json({ message: 'Server error revoking delegation.' });
   }
 });
 

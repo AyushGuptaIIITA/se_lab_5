@@ -45,12 +45,15 @@ export default function Navbar() {
       { to: '/doctor/patients', icon: Users, label: t('Patient Directory') },
       { to: '/doctor/schedule', icon: Calendar, label: t('schedule') },
       { to: '/doctor/prescription', icon: FileText, label: t('e-Prescription') },
+      { to: '/doctor/leaves', icon: Calendar, label: 'Leave Requests' },
     ],
     admin: [
       { to: '/admin/dashboard', icon: LayoutDashboard, label: t('dashboard') },
       { to: '/admin/users', icon: Users, label: t('users') },
       { to: '/admin/reports', icon: BarChart3, label: t('reports') },
       { to: '/admin/audit-logs', icon: Shield, label: t('auditLogs') },
+      { to: '/admin/leaves', icon: Calendar, label: 'Leave Approvals' },
+      { to: '/admin/delegation', icon: Shield, label: 'Role Delegation' },
     ],
   };
 

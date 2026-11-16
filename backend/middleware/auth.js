@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AdminDelegation = require('../models/AdminDelegation');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'telemed_default_secure_jwt_secret_2026_fallback_key';
 
@@ -26,6 +27,22 @@ const auth = async (req, res, next) => {
     }
 
     req.user = user;
+
+    // Check for active admin delegation
+    if (user.role !== 'admin') {
+      const now = new Date();
+      const delegation = await AdminDelegation.findOne({
+        delegatedTo: user._id,
+        isActive: true,
+        startDate: { $lte: now },
+        endDate: { $gte: now }
+      });
+      req.user.isDelegatedAdmin = !!delegation;
+      req.user.delegation = delegation || null;
+    } else {
+      req.user.isDelegatedAdmin = false;
+    }
+
     next();
   } catch (err) {
     if (err.name === 'JsonWebTokenError') {
@@ -49,11 +66,21 @@ const doctorOnly = (req, res, next) => {
 };
 
 /**
- * Admin-only middleware
+ * Admin-only middleware (also allows delegated admins)
  */
 const adminOnly = (req, res, next) => {
-  if (req.user.role !== 'admin') {
+  if (req.user.role !== 'admin' && !req.user.isDelegatedAdmin) {
     return res.status(403).json({ message: 'Access denied. Admins only.' });
+  }
+  next();
+};
+
+/**
+ * Strict admin-only middleware (only real admins, not delegates)
+ */
+const strictAdminOnly = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ message: 'Access denied. This action requires full admin privileges.' });
   }
   next();
 };
@@ -68,4 +95,4 @@ const patientOnly = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, doctorOnly, adminOnly, patientOnly };
+module.exports = { auth, doctorOnly, adminOnly, strictAdminOnly, patientOnly };

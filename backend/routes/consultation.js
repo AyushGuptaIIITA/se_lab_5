@@ -424,4 +424,204 @@ router.get('/:sessionId/signals', auth, async (req, res) => {
   }
 });
 
+// POST /api/consultation/predict-disease — ML symptom analysis
+// Takes clinical notes + chat transcript and returns likely disease predictions
+router.post('/predict-disease', auth, async (req, res) => {
+  try {
+    const { symptoms, chatTranscript, clinicalNotes } = req.body;
+
+    // Combine all text sources into one corpus for analysis
+    const corpus = [
+      symptoms || '',
+      clinicalNotes || '',
+      (chatTranscript || []).map(m => m.text || '').join(' ')
+    ].join(' ').toLowerCase();
+
+    if (!corpus.trim()) {
+      return res.status(400).json({ message: 'No symptom data provided for analysis.' });
+    }
+
+    // Rule-based symptom → disease mapping (ML-lite, production systems would use a trained model)
+    const diseaseKnowledgeBase = [
+      {
+        disease: 'Common Cold / Upper Respiratory Infection',
+        icd10: 'J00',
+        keywords: ['runny nose', 'sneezing', 'sore throat', 'cold', 'congestion', 'stuffy nose', 'nasal', 'cough mild'],
+        weight: 1
+      },
+      {
+        disease: 'Influenza (Flu)',
+        icd10: 'J11',
+        keywords: ['fever', 'body ache', 'fatigue', 'flu', 'chills', 'headache', 'muscle pain', 'high temperature'],
+        weight: 1.2
+      },
+      {
+        disease: 'COVID-19 / SARS-CoV-2',
+        icd10: 'U07.1',
+        keywords: ['covid', 'loss of smell', 'loss of taste', 'anosmia', 'covid-19', 'coronavirus', 'oxygen', 'isolation'],
+        weight: 1.5
+      },
+      {
+        disease: 'Pneumonia',
+        icd10: 'J18.9',
+        keywords: ['pneumonia', 'chest pain', 'difficulty breathing', 'breathlessness', 'productive cough', 'oxygen saturation', 'crackles'],
+        weight: 1.4
+      },
+      {
+        disease: 'Hypertension (High Blood Pressure)',
+        icd10: 'I10',
+        keywords: ['blood pressure', 'hypertension', 'bp high', '140', '160', '180', 'headache vision', 'palpitation'],
+        weight: 1.3
+      },
+      {
+        disease: 'Type 2 Diabetes Mellitus',
+        icd10: 'E11',
+        keywords: ['diabetes', 'blood sugar', 'glucose high', 'polyuria', 'polydipsia', 'thirst', 'frequent urination', 'hba1c', 'fasting'],
+        weight: 1.3
+      },
+      {
+        disease: 'Urinary Tract Infection (UTI)',
+        icd10: 'N39.0',
+        keywords: ['uti', 'burning urination', 'dysuria', 'frequent urination', 'cloudy urine', 'urinary infection', 'bladder'],
+        weight: 1.2
+      },
+      {
+        disease: 'Gastroenteritis / Food Poisoning',
+        icd10: 'A09',
+        keywords: ['vomiting', 'diarrhea', 'nausea', 'stomach pain', 'loose stools', 'food poisoning', 'gastro', 'cramps', 'abdominal pain'],
+        weight: 1.1
+      },
+      {
+        disease: 'Migraine',
+        icd10: 'G43.9',
+        keywords: ['migraine', 'severe headache', 'throbbing', 'light sensitivity', 'photophobia', 'aura', 'one sided headache'],
+        weight: 1.2
+      },
+      {
+        disease: 'Dengue Fever',
+        icd10: 'A97',
+        keywords: ['dengue', 'platelet', 'rash', 'joint pain', 'bone pain', 'high fever', 'mosquito', 'low platelet'],
+        weight: 1.4
+      },
+      {
+        disease: 'Malaria',
+        icd10: 'B54',
+        keywords: ['malaria', 'intermittent fever', 'shivering', 'chills rigor', 'spleen', 'antimalarial', 'plasmodium'],
+        weight: 1.4
+      },
+      {
+        disease: 'Typhoid Fever',
+        icd10: 'A01.0',
+        keywords: ['typhoid', 'widal', 'salmonella', 'stepladder fever', 'rose spots', 'slow pulse'],
+        weight: 1.3
+      },
+      {
+        disease: 'Asthma',
+        icd10: 'J45.9',
+        keywords: ['asthma', 'wheezing', 'bronchospasm', 'inhaler', 'shortness of breath exertion', 'nocturnal cough', 'bronchial'],
+        weight: 1.2
+      },
+      {
+        disease: 'Anemia',
+        icd10: 'D64.9',
+        keywords: ['anemia', 'pale', 'pallor', 'low hemoglobin', 'weakness', 'fatigue iron', 'breathless mild', 'low hb'],
+        weight: 1.1
+      },
+      {
+        disease: 'Anxiety / Panic Disorder',
+        icd10: 'F41.1',
+        keywords: ['anxiety', 'panic', 'palpitation', 'racing heart', 'nervous', 'stress', 'worry', 'restless', 'sweating anxiety'],
+        weight: 1.0
+      },
+      {
+        disease: 'Depression',
+        icd10: 'F32.9',
+        keywords: ['depression', 'sad', 'hopeless', 'low mood', 'loss of interest', 'sleep disturbance', 'suicidal', 'antidepressant'],
+        weight: 1.0
+      },
+      {
+        disease: 'Hypothyroidism',
+        icd10: 'E03.9',
+        keywords: ['thyroid', 'hypothyroid', 'tsh high', 'weight gain', 'cold intolerance', 'constipation', 'fatigue thyroid', 'levothyroxine'],
+        weight: 1.1
+      },
+      {
+        disease: 'Acute Gastritis / Peptic Ulcer',
+        icd10: 'K29.7',
+        keywords: ['gastritis', 'acidity', 'acid reflux', 'gerd', 'heartburn', 'epigastric pain', 'h pylori', 'peptic ulcer', 'antacid'],
+        weight: 1.1
+      },
+      {
+        disease: 'Kidney Stones (Urolithiasis)',
+        icd10: 'N20.0',
+        keywords: ['kidney stone', 'renal colic', 'flank pain', 'hematuria', 'urolithiasis', 'ureteric stone', 'blood in urine'],
+        weight: 1.3
+      },
+      {
+        disease: 'Jaundice / Hepatitis',
+        icd10: 'K72.9',
+        keywords: ['jaundice', 'yellow eyes', 'bilirubin', 'hepatitis', 'liver', 'dark urine', 'pale stool', 'icterus'],
+        weight: 1.4
+      }
+    ];
+
+    // Score each disease based on keyword matches in corpus
+    const scores = diseaseKnowledgeBase.map(entry => {
+      let matchCount = 0;
+      let matchedKeywords = [];
+      entry.keywords.forEach(kw => {
+        if (corpus.includes(kw)) {
+          matchCount++;
+          matchedKeywords.push(kw);
+        }
+      });
+      const rawScore = (matchCount / entry.keywords.length) * entry.weight;
+      return {
+        disease: entry.disease,
+        icd10: entry.icd10,
+        score: rawScore,
+        matchedKeywords,
+        matchCount
+      };
+    });
+
+    // Filter and sort by score
+    const predictions = scores
+      .filter(s => s.matchCount > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+      .map((s, index) => {
+        const totalMax = Math.max(...scores.map(x => x.score));
+        const confidence = totalMax > 0 ? Math.round((s.score / totalMax) * 100) : 0;
+        return {
+          rank: index + 1,
+          disease: s.disease,
+          icd10Code: s.icd10,
+          confidence: Math.min(confidence, 95), // Cap at 95% — always leave room for clinical judgment
+          matchedSymptoms: s.matchedKeywords,
+          disclaimer: 'AI-assisted suggestion only. Clinical judgment must prevail.'
+        };
+      });
+
+    if (predictions.length === 0) {
+      return res.json({
+        predictions: [],
+        message: 'Insufficient symptom data for confident prediction. Please document more specific symptoms.',
+        analysisNote: 'Consider adding chief complaints, duration, and associated symptoms for better accuracy.'
+      });
+    }
+
+    res.json({
+      predictions,
+      corpusWordCount: corpus.split(/\s+/).filter(Boolean).length,
+      analysisTimestamp: new Date().toISOString(),
+      model: 'TeleMed-SymptomNet v1.0 (Rule-Based NLP)',
+      disclaimer: 'These predictions are AI-assisted suggestions based on documented symptoms. Final diagnosis must be made by a qualified medical professional.'
+    });
+  } catch (err) {
+    console.error('Disease prediction error:', err);
+    res.status(500).json({ message: 'Server error during disease prediction analysis.' });
+  }
+});
+
 module.exports = router;

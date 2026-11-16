@@ -1,13 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
-  Video, VideoOff, Mic, MicOff, PhoneOff, Wifi, WifiOff, AlertTriangle, 
+  Video, VideoOff, Mic, MicOff, PhoneOff, AlertTriangle, 
   Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
-  ExternalLink, CheckCircle, ShieldCheck, Stethoscope, Camera, Volume2, ArrowLeft, Lock, Check, XCircle, Calendar
+  ExternalLink, CheckCircle, Stethoscope, ArrowLeft, XCircle, Calendar,
+  Brain, TrendingUp, AlertCircle, Zap
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
-import StatusBadge from '../../components/StatusBadge';
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
@@ -31,226 +31,39 @@ export default function ConsultationRoom() {
   const [notes, setNotes] = useState('');
   const [alert, setAlert] = useState(null);
   const [elapsed, setElapsed] = useState(0);
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' or 'notes'
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [networkStatus, setNetworkStatus] = useState('connected');
-
-  // Video Media Stream
-  const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
-  const streamRef = useRef(null);
-  const remoteStreamRef = useRef(null);
-  const peerConnectionRef = useRef(null);
-  const signalsProcessedRef = useRef(new Set());
-  const pendingCandidatesRef = useRef([]);
-  const currentSessionIdRef = useRef(null);
-  const lastSignalTimestampRef = useRef(null);
-  const [hasCamera, setHasCamera] = useState(false);
-  const [cameraError, setCameraError] = useState(null);
-  const [remoteConnected, setRemoteConnected] = useState(false);
-  const [remoteHasStream, setRemoteHasStream] = useState(false);
-  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  const jitsiApiRef = useRef(null);
-  const jitsiMountedRef = useRef(false);
+  const [activeTab, setActiveTab] = useState('chat');
 
   // Chat state
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
 
+  // ML Disease Prediction state
+  const [mlPredictions, setMlPredictions] = useState(null);
+  const [mlLoading, setMlLoading] = useState(false);
+  const [showMlPanel, setShowMlPanel] = useState(false);
+
+  // Jitsi state
+  const jitsiApiRef = useRef(null);
+  const jitsiMountedRef = useRef(false);
+
   const timerRef = useRef(null);
   const chatContainerRef = useRef(null);
   const pollingRef = useRef(null);
+  const sessionRef = useRef(null);
 
-  const RTC_CONFIG = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' }
-    ]
-  };
+  // Keep sessionRef in sync
+  useEffect(() => { sessionRef.current = session; }, [session]);
 
-  // Attach local media stream tracks to peer connection
-  const attachLocalTracksToPeer = (pc, stream) => {
-    if (!pc || !stream) return;
-    try {
-      const senders = pc.getSenders();
-      stream.getTracks().forEach(track => {
-        const alreadyAdded = senders.some(s => s.track && s.track.kind === track.kind);
-        if (!alreadyAdded) {
-          pc.addTrack(track, stream);
-        }
-      });
-    } catch (e) {
-      console.warn('[WebRTC] Error attaching local tracks:', e);
-    }
-  };
-
-  // Dynamic clinical fallback media stream (guarantees WebRTC negotiation even if hardware camera is locked by another tab on Windows)
-  const createFallbackStream = (userName, userRole) => {
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 360;
-      const ctx = canvas.getContext('2d');
-      let angle = 0;
-
-      const draw = () => {
-        angle += 0.05;
-        // Background
-        ctx.fillStyle = userRole === 'doctor' ? '#0f172a' : '#042f2e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Grid lines
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < canvas.width; x += 40) {
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-        }
-        for (let y = 0; y < canvas.height; y += 40) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-        }
-
-        // Animated pulse circle around avatar
-        const pulse = Math.sin(angle) * 8;
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 50 + pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = userRole === 'doctor' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(16, 185, 129, 0.5)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        // Avatar circle
-        ctx.beginPath();
-        ctx.arc(canvas.width / 2, canvas.height / 2 - 20, 45, 0, Math.PI * 2);
-        ctx.fillStyle = userRole === 'doctor' ? '#2563eb' : '#059669';
-        ctx.fill();
-
-        // Initial letter
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 36px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText((userName || 'U').charAt(0).toUpperCase(), canvas.width / 2, canvas.height / 2 - 20);
-
-        // Name and role label
-        ctx.font = 'bold 16px sans-serif';
-        ctx.fillText(userName || 'Participant', canvas.width / 2, canvas.height / 2 + 50);
-
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = userRole === 'doctor' ? '#93c5fd' : '#a7f3d0';
-        ctx.fillText(userRole === 'doctor' ? 'Doctor Live Feed' : 'Patient Live Feed', canvas.width / 2, canvas.height / 2 + 75);
-
-        // Animated ECG waveform at bottom
-        ctx.strokeStyle = userRole === 'doctor' ? '#38bdf8' : '#34d399';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let x = 0; x < canvas.width; x += 5) {
-          const y = canvas.height - 25 + Math.sin(angle * 2 + x * 0.05) * 6;
-          if (x === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        requestAnimationFrame(draw);
-      };
-      draw();
-
-      const canvasStream = canvas.captureStream(30);
-
-      // Create synthetic audio track so WebRTC audio negotiation always succeeds
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) {
-        const audioCtx = new AudioCtx();
-        const osc = audioCtx.createOscillator();
-        const dst = audioCtx.createMediaStreamDestination();
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0.0001;
-        osc.connect(gain);
-        gain.connect(dst);
-        osc.start();
-        const audioTrack = dst.stream.getAudioTracks()[0];
-        if (audioTrack) {
-          canvasStream.addTrack(audioTrack);
-        }
-      }
-
-      return canvasStream;
-    } catch (e) {
-      console.warn('Fallback stream error:', e);
-      return null;
-    }
-  };
-
-  // Initialize Camera & Microphone Stream
-  const startCamera = async () => {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        // Stop any old stream tracks first
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(t => t.stop());
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-
-        streamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          localVideoRef.current.play().catch(() => {});
-        }
-        setHasCamera(true);
-        setCameraError(null);
-
-        // Attach new tracks to existing RTCPeerConnection if active
-        if (peerConnectionRef.current) {
-          attachLocalTracksToPeer(peerConnectionRef.current, stream);
-        }
-
-        return stream;
-      }
-    } catch (err) {
-      console.warn('Hardware webcam/mic busy or not accessible, using live clinical stream fallback:', err);
-      const fallback = createFallbackStream(user?.name, user?.role);
-      if (fallback) {
-        streamRef.current = fallback;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = fallback;
-          localVideoRef.current.play().catch(() => {});
-        }
-        setHasCamera(true);
-        setCameraError(null);
-
-        if (peerConnectionRef.current) {
-          attachLocalTracksToPeer(peerConnectionRef.current, fallback);
-        }
-
-        return fallback;
-      }
-      setHasCamera(false);
-      return null;
-    }
-  };
-
-    const loadJitsiScript = () => {
+  // ─── Load Jitsi Script ──────────────────────────────────────────────────────
+  const loadJitsiScript = () => {
     return new Promise((resolve) => {
-      if (window.JitsiMeetExternalAPI) {
-        resolve(true);
-        return;
-      }
+      if (window.JitsiMeetExternalAPI) { resolve(true); return; }
       const existing = document.getElementById('jitsi-external-api-script');
       if (existing) {
-        if (window.JitsiMeetExternalAPI) {
-          resolve(true);
-        } else {
-          existing.addEventListener('load', () => resolve(true));
-          existing.addEventListener('error', () => resolve(false));
-        }
+        const wait = setInterval(() => {
+          if (window.JitsiMeetExternalAPI) { clearInterval(wait); resolve(true); }
+        }, 100);
         return;
       }
       const script = document.createElement('script');
@@ -263,303 +76,170 @@ export default function ConsultationRoom() {
     });
   };
 
-  const mountJitsi = async (targetSession) => {
+  // ─── Mount Jitsi (Two-way video — Jitsi handles BOTH cameras internally) ──
+  const mountJitsi = useCallback(async (targetSession) => {
     if (jitsiMountedRef.current) return;
-    const currentSess = targetSession || session;
-    if (!currentSess || currentSess.status !== 'in-progress') return;
+
+    const sess = targetSession || sessionRef.current;
+    if (!sess || sess.status !== 'in-progress') return;
 
     const loaded = await loadJitsiScript();
     if (!loaded || !window.JitsiMeetExternalAPI) {
-      console.warn('Failed to load Jitsi Meet script');
+      setAlert({ type: 'error', message: 'Failed to load video engine. Please check your internet connection.' });
       return;
     }
 
     const container = document.getElementById('jitsi-video-container');
     if (!container) return;
 
+    // Dispose any stale instance
+    if (jitsiApiRef.current) {
+      try { jitsiApiRef.current.dispose(); } catch {}
+      jitsiApiRef.current = null;
+    }
+
+    container.innerHTML = '';
+
+    // Unique room per appointment — same room name for doctor and patient ensures two-way
+    const roomName = 'TeleMed-Hospital-Appt-' + appointmentId;
+
     try {
-      container.innerHTML = '';
-      const roomName = 'TeleMedRuralAppt-' + appointmentId;
-      const domain = 'meet.jit.si';
-      const options = {
+      const jApi = new window.JitsiMeetExternalAPI('meet.jit.si', {
         roomName,
         width: '100%',
         height: '100%',
         parentNode: container,
         userInfo: {
-          displayName: isDoctor 
-            ? (user?.name?.startsWith('Dr.') ? user.name : 'Dr. ' + (user?.name || 'Physician'))
+          displayName: isDoctor
+            ? (user?.name?.startsWith('Dr.') ? user.name : 'Dr. ' + user?.name)
             : (user?.name || 'Patient'),
           email: user?.email || ''
         },
         configOverwrite: {
+          // Both participants start with audio and video ON
           startWithAudioMuted: false,
           startWithVideoMuted: false,
+          // Skip the pre-join/lobby screen — go straight into the call
           prejoinPageEnabled: false,
           prejoinConfig: { enabled: false },
+          // Disable lobby so both sides join immediately into the same room
+          lobby: { autoKnock: false, enableChat: false },
+          // Show tiles side-by-side by default
+          defaultLocalDisplayName: isDoctor ? 'Doctor' : 'Patient',
           disableDeepLinking: true,
           enableClosePage: false,
-          tileView: { active: true },
-          toolbarButtons: [
-            'camera',
-            'microphone',
-            'tileview',
-            'chat',
-            'hangup',
-            'settings',
-            'desktop'
-          ]
+          // Essential: allow both participants to share cameras
+          resolution: 720,
+          constraints: {
+            video: { height: { ideal: 720, max: 720, min: 240 } }
+          },
+          // Tile view shows both cameras side by side
+          tileView: { numberOfVisibleTiles: 2 },
+          filmstrip: { disableResizable: false },
+          // Audio settings
+          enableNoAudioDetection: true,
+          enableNoisyMicDetection: true,
+          // No watermarks
+          disableRemoteMute: false,
         },
         interfaceConfigOverwrite: {
           SHOW_JITSI_WATERMARK: false,
           SHOW_WATERMARK_FOR_GUESTS: false,
           SHOW_BRAND_WATERMARK: false,
           SHOW_POWERED_BY: false,
-          DEFAULT_REMOTE_DISPLAY_NAME: isDoctor ? patientName : doctorName,
+          BRAND_WATERMARK_LINK: '',
+          // Show only essential toolbar buttons
           TOOLBAR_BUTTONS: [
             'camera',
             'microphone',
             'tileview',
-            'chat',
             'hangup',
+            'chat',
             'settings',
-            'desktop'
-          ]
+            'desktop',
+            'fullscreen'
+          ],
+          // Show tile view by default so both cameras are visible side-by-side
+          INITIAL_TOOLBAR_TIMEOUT: 20000,
+          TOOLBAR_ALWAYS_VISIBLE: false,
+          DEFAULT_BACKGROUND: '#1e293b',
+          DEFAULT_REMOTE_DISPLAY_NAME: isDoctor ? 'Patient' : 'Doctor',
+          APP_NAME: 'TeleMed Consultation',
+          NATIVE_APP_NAME: 'TeleMed',
+          LANG_DETECTION: false,
+          CONNECTION_INDICATOR_DISABLED: false,
+          VIDEO_QUALITY_LABEL_DISABLED: false,
         }
-      };
+      });
 
-      const jApi = new window.JitsiMeetExternalAPI(domain, options);
       jitsiApiRef.current = jApi;
       jitsiMountedRef.current = true;
-      setRemoteConnected(true);
-      setRemoteHasStream(true);
 
+      // Auto-enable tile view after mount to show both cameras side-by-side
+      jApi.addEventListener('videoConferenceJoined', () => {
+        setTimeout(() => {
+          try {
+            jApi.executeCommand('setTileView', true);
+          } catch {}
+        }, 1500);
+      });
+
+      // Handle call end
       jApi.addEventListener('readyToClose', () => {
         if (isDoctor) {
           markAsCompleted();
         } else {
+          stopJitsi();
           navigate('/patient/appointments');
         }
       });
-    } catch (e) {
-      console.error('Error mounting Jitsi video:', e);
-    }
-  };
 
-  const stopCamera = () => {
+    } catch (e) {
+      console.error('Jitsi mount error:', e);
+      setAlert({ type: 'error', message: 'Video engine failed to start. Please refresh the page.' });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appointmentId, isDoctor, user]);
+
+  // ─── Dispose Jitsi ─────────────────────────────────────────────────────────
+  const stopJitsi = () => {
     if (jitsiApiRef.current) {
       try { jitsiApiRef.current.dispose(); } catch {}
       jitsiApiRef.current = null;
       jitsiMountedRef.current = false;
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    setHasCamera(false);
-    setRemoteConnected(false);
-    setRemoteHasStream(false);
   };
 
-  const initPeerConnection = (forceReset = false) => {
-    if (!forceReset && peerConnectionRef.current && peerConnectionRef.current.connectionState !== 'closed') {
-      return peerConnectionRef.current;
-    }
-
-    if (peerConnectionRef.current) {
-      try {
-        peerConnectionRef.current.close();
-      } catch {}
-      peerConnectionRef.current = null;
-    }
-
-    try {
-      const pc = new RTCPeerConnection(RTC_CONFIG);
-      peerConnectionRef.current = pc;
-
-      // Add local audio and video tracks
-      if (streamRef.current) {
-        attachLocalTracksToPeer(pc, streamRef.current);
-      }
-
-      pc.ontrack = (event) => {
-        console.log('[WebRTC] Received remote track:', event.track.kind, event.streams);
-        let stream = (event.streams && event.streams[0]) ? event.streams[0] : null;
-        if (!stream) {
-          if (!remoteStreamRef.current) {
-            remoteStreamRef.current = new MediaStream();
-          }
-          remoteStreamRef.current.addTrack(event.track);
-          stream = remoteStreamRef.current;
-        } else {
-          remoteStreamRef.current = stream;
-        }
-
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
-          const playPromise = remoteVideoRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise.then(() => {
-              setRemoteAudioBlocked(false);
-            }).catch(e => {
-              console.warn('Remote video play warning:', e);
-              if (e.name === 'NotAllowedError') {
-                setRemoteAudioBlocked(true);
-              }
-            });
-          }
-        }
-        setRemoteHasStream(true);
-        setRemoteConnected(true);
-      };
-
-      pc.onicecandidate = (event) => {
-        const sid = currentSessionIdRef.current;
-        if (event.candidate && sid) {
-          api.post(`/consultation/${sid}/signal`, {
-            type: 'candidate',
-            data: event.candidate
-          }).catch(() => {});
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        console.log('[WebRTC] Connection state changed to:', pc.connectionState);
-        if (pc.connectionState === 'connected') {
-          setRemoteConnected(true);
-          setRemoteHasStream(true);
-        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-          setRemoteConnected(false);
-        }
-      };
-
-      return pc;
-    } catch (e) {
-      console.warn('RTCPeerConnection initialization error:', e);
-      return null;
-    }
-  };
-
-  // Broadcast presence / ready signal
-  const broadcastReady = async (targetSessionId) => {
-    const sid = targetSessionId || session?._id || currentSessionIdRef.current;
-    if (!sid) return;
-    try {
-      await api.post(`/consultation/${sid}/signal`, {
-        type: 'ready',
-        data: { role: isDoctor ? 'doctor' : 'patient' }
-      });
-      console.log('[WebRTC] Ready signal dispatched.');
-    } catch (err) {
-      console.warn('Error sending ready signal:', err);
-    }
-  };
-
-  // Create and send WebRTC SDP Offer
-  const createAndSendOffer = async (targetSessionId) => {
-    const sid = targetSessionId || session?._id || currentSessionIdRef.current;
-    if (!sid) return;
-    try {
-      if (!streamRef.current) {
-        await startCamera();
-      }
-
-      const pc = initPeerConnection(true);
-      if (!pc) return;
-
-      if (streamRef.current) {
-        attachLocalTracksToPeer(pc, streamRef.current);
-      }
-
-      const offer = await pc.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      await pc.setLocalDescription(offer);
-
-      await api.post(`/consultation/${sid}/signal`, {
-        type: 'offer',
-        data: offer
-      });
-      console.log('[WebRTC] Offer dispatched successfully.');
-    } catch (err) {
-      console.warn('Error creating WebRTC offer:', err);
-    }
-  };
-
-  // Drain pending ICE candidates once remote description is set
-  const drainPendingCandidates = async (pc) => {
-    if (!pc) return;
-    while (pendingCandidatesRef.current.length > 0) {
-      const candidate = pendingCandidatesRef.current.shift();
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (e) {
-        console.warn('Error applying pending ICE candidate:', e);
-      }
-    }
-  };
-
-  // Toggle mic
+  // ─── Toggle mic via Jitsi API ──────────────────────────────────────────────
   const toggleMic = () => {
-    if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => {
-        track.enabled = !micOn;
-      });
+    if (jitsiApiRef.current) {
+      jitsiApiRef.current.executeCommand('toggleAudio');
     }
-    setMicOn(!micOn);
+    setMicOn(prev => !prev);
   };
 
-  // Toggle camera
+  // ─── Toggle cam via Jitsi API ──────────────────────────────────────────────
   const toggleCam = () => {
-    if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => {
-        track.enabled = !camOn;
-      });
+    if (jitsiApiRef.current) {
+      jitsiApiRef.current.executeCommand('toggleVideo');
     }
-    setCamOn(!camOn);
+    setCamOn(prev => !prev);
   };
 
-  // Manual Reconnect Video & Audio function
-  const handleReconnect = async () => {
-    setReconnecting(true);
-    setAlert({ type: 'info', message: 'Reconnecting video and audio stream with peer...' });
-    try {
-      if (peerConnectionRef.current) {
-        try { peerConnectionRef.current.close(); } catch {}
-        peerConnectionRef.current = null;
-      }
-      pendingCandidatesRef.current = [];
-      signalsProcessedRef.current.clear();
-      setRemoteHasStream(false);
-      setRemoteConnected(false);
-
-      await startCamera();
-
-      const sid = session?._id || currentSessionIdRef.current;
-      if (sid) {
-        if (isDoctor) {
-          await createAndSendOffer(sid);
-        } else {
-          await broadcastReady(sid);
-        }
-      }
-      setTimeout(() => setAlert(null), 3000);
-    } catch (err) {
-      setAlert({ type: 'error', message: 'Reconnect failed. Please verify camera & microphone permissions.' });
-    } finally {
-      setReconnecting(false);
-    }
+  // ─── Reload video (re-mount Jitsi) ────────────────────────────────────────
+  const handleReconnect = () => {
+    jitsiMountedRef.current = false;
+    stopJitsi();
+    setTimeout(() => mountJitsi(sessionRef.current), 500);
+    setAlert({ type: 'info', message: 'Reconnecting video call...' });
+    setTimeout(() => setAlert(null), 3000);
   };
 
-  // 1. Load appointment and check if a session already exists
+  // ─── Fetch appointment + session on mount ──────────────────────────────────
   useEffect(() => {
     let mounted = true;
-    const fetchApptAndSession = async () => {
+
+    const init = async () => {
       try {
         const [apptRes, sessionRes] = await Promise.all([
           api.get(`/appointments/${appointmentId}`),
@@ -567,10 +247,10 @@ export default function ConsultationRoom() {
         ]);
 
         if (!mounted) return;
+
         const appt = apptRes.data.appointment;
         setAppointment(appt);
 
-        // If appointment is already completed or incomplete, block rejoining!
         if (['completed', 'incomplete'].includes(appt.status)) {
           setLoading(false);
           return;
@@ -579,291 +259,165 @@ export default function ConsultationRoom() {
         const sess = sessionRes.data?.session;
         if (sess) {
           setSession(sess);
-          currentSessionIdRef.current = sess._id;
+          sessionRef.current = sess;
           setMessages(sess.messages || []);
           if (sess.consultationNotes) setNotes(sess.consultationNotes);
-          
-          if (sess.status === 'completed') {
-            setLoading(false);
-            return;
-          }
 
-          // Calculate elapsed time from startedAt
+          if (sess.status === 'completed') { setLoading(false); return; }
+
           if (sess.startedAt) {
-            const startSec = Math.floor((new Date() - new Date(sess.startedAt)) / 1000);
-            setElapsed(Math.max(0, startSec));
-          }
-          if (!timerRef.current) {
-            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+            setElapsed(Math.max(0, Math.floor((Date.now() - new Date(sess.startedAt)) / 1000)));
           }
 
-          // Start camera automatically
-          await startCamera();
-
-          if (isDoctor) {
-            setTimeout(() => {
-              createAndSendOffer(sess._id);
-            }, 800);
-          } else {
-            // Patient notifies doctor they are in the room with camera ready
-            setTimeout(() => {
-              broadcastReady(sess._id);
-            }, 800);
-          }
+          timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
         }
       } catch (err) {
-        if (mounted) setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to load consultation room details.' });
+        if (mounted) setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to load consultation room.' });
       } finally {
         if (mounted) setLoading(false);
       }
     };
 
-    fetchApptAndSession();
+    init();
 
     return () => {
       mounted = false;
-      stopCamera();
+      stopJitsi();
       clearInterval(timerRef.current);
       clearInterval(pollingRef.current);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointmentId]);
 
-  // Ensure video element gets stream if camera started
+  // ─── Mount Jitsi when session becomes in-progress ─────────────────────────
   useEffect(() => {
-    if (hasCamera && streamRef.current && localVideoRef.current) {
-      localVideoRef.current.srcObject = streamRef.current;
+    if (session?.status === 'in-progress' && !jitsiMountedRef.current) {
+      const t = setTimeout(() => mountJitsi(session), 500);
+      return () => clearTimeout(t);
     }
-  }, [hasCamera]);
-
-    useEffect(() => {
-    if (session && session.status === 'in-progress' && !jitsiMountedRef.current) {
-      const timer = setTimeout(() => {
-        mountJitsi(session);
-      }, 400);
-      return () => clearTimeout(timer);
-    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.status, session?._id]);
 
-// Patient waiting room polling: automatically activates when doctor starts the call
+  // ─── Patient waiting room: poll until doctor starts ───────────────────────
   useEffect(() => {
     if (isDoctor || session) return;
 
-    let waitingPoll = null;
-    const checkDoctorStarted = async () => {
+    const poll = setInterval(async () => {
       try {
         const res = await api.get(`/consultation/appointment/${appointmentId}`);
-        if (res.data?.session && res.data.session.status === 'in-progress') {
-          console.log('[Patient] Doctor started consultation! Activating room...');
+        if (res.data?.session?.status === 'in-progress') {
           const activeSess = res.data.session;
           setSession(activeSess);
-          currentSessionIdRef.current = activeSess._id;
+          sessionRef.current = activeSess;
           setMessages(activeSess.messages || []);
-
-          await startCamera();
-          setTimeout(() => {
-            broadcastReady(activeSess._id);
-          setTimeout(() => mountJitsi(activeSess), 300);
-          }, 600);
-
-          if (!timerRef.current) {
-            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-          }
+          timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+          clearInterval(poll);
         }
-      } catch (err) {
-        // silent polling
-      }
-    };
+      } catch {}
+    }, 2500);
 
-    waitingPoll = setInterval(checkDoctorStarted, 2500);
-    return () => clearInterval(waitingPoll);
+    return () => clearInterval(poll);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDoctor, session, appointmentId]);
 
-  // Keep currentSessionIdRef in sync with session._id
-  useEffect(() => {
-    if (session?._id) {
-      currentSessionIdRef.current = session._id;
-    }
-  }, [session?._id]);
-
-  // 2. Poll messages & WebRTC signaling when session is active
+  // ─── Poll for new messages when session is active ─────────────────────────
   useEffect(() => {
     if (!session?._id || session?.status === 'completed') return;
 
-    const pollSession = async () => {
+    pollingRef.current = setInterval(async () => {
       try {
-        const sinceParam = lastSignalTimestampRef.current ? `?since=${encodeURIComponent(lastSignalTimestampRef.current)}` : '';
-        const [resSession, resSignals] = await Promise.all([
-          api.get(`/consultation/${session._id}`),
-          api.get(`/consultation/${session._id}/signals${sinceParam}`).catch(() => ({ data: { signals: [] } }))
-        ]);
-
-        if (resSession.data?.session?.messages) {
-          setMessages(resSession.data.session.messages);
+        const res = await api.get(`/consultation/${session._id}`);
+        if (res.data?.session?.messages) {
+          setMessages(res.data.session.messages);
         }
-        if (resSession.data?.session?.status === 'completed') {
-          setSession(resSession.data.session);
-          stopCamera();
-          return;
+        if (res.data?.session?.status === 'completed') {
+          setSession(res.data.session);
+          stopJitsi();
         }
+      } catch {}
+    }, 3000);
 
-        if (resSignals.data?.serverTime) {
-          lastSignalTimestampRef.current = resSignals.data.serverTime;
-        }
-
-        // Process WebRTC signaling packets
-        const signals = resSignals.data?.signals || [];
-        for (const sig of signals) {
-          if (!sig._id || signalsProcessedRef.current.has(sig._id)) continue;
-          signalsProcessedRef.current.add(sig._id);
-
-          console.log('[WebRTC] Processing incoming signal:', sig.type);
-
-          // If other user is ready and I am doctor, send fresh offer
-          if (sig.type === 'ready' && isDoctor) {
-            await createAndSendOffer(session._id);
-            continue;
-          }
-
-          const pc = initPeerConnection();
-          if (!pc) continue;
-
-          if (sig.type === 'offer') {
-            try {
-              if (!streamRef.current) {
-                await startCamera();
-              }
-              if (streamRef.current) {
-                attachLocalTracksToPeer(pc, streamRef.current);
-              }
-
-              await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-              await drainPendingCandidates(pc);
-
-              const answer = await pc.createAnswer();
-              await pc.setLocalDescription(answer);
-
-              await api.post(`/consultation/${session._id}/signal`, {
-                type: 'answer',
-                data: answer
-              });
-              console.log('[WebRTC] Answer dispatched successfully.');
-            } catch (err) {
-              console.warn('Error processing WebRTC offer:', err);
-            }
-          } else if (sig.type === 'answer') {
-            try {
-              if (pc.signalingState === 'have-local-offer') {
-                await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-                await drainPendingCandidates(pc);
-                console.log('[WebRTC] Remote answer accepted.');
-              }
-            } catch (err) {
-              console.warn('Error processing WebRTC answer:', err);
-            }
-          } else if (sig.type === 'candidate' && sig.data) {
-            if (pc.remoteDescription && pc.remoteDescription.type) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(sig.data));
-              } catch (e) {
-                console.warn('Error adding ICE candidate:', e);
-              }
-            } else {
-              pendingCandidatesRef.current.push(sig.data);
-            }
-          }
-        }
-      } catch {
-        // Silent polling error
-      }
-    };
-
-    pollingRef.current = setInterval(pollSession, 2000);
     return () => clearInterval(pollingRef.current);
   }, [session?._id, session?.status]);
 
-  // Scroll chat strictly inside the container (NEVER scrolls whole window)
+  // ─── Auto-scroll chat ─────────────────────────────────────────────────────
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // 3. Start or join session
+  // ─── Start Session ────────────────────────────────────────────────────────
   const startSession = async () => {
     setStarting(true);
     setAlert(null);
     try {
       const res = await api.post('/consultation/start', { appointmentId });
-      const currentSession = res.data.session;
-      setSession(currentSession);
-      currentSessionIdRef.current = currentSession._id;
-      setMessages(currentSession.messages || []);
-      setAlert({ type: 'success', message: res.data?.message || 'Connected to live consultation session.' });
-      setTimeout(() => mountJitsi(currentSession), 300);
-      
-      // Start local camera stream
-      await startCamera();
-
-      // If doctor, initiate WebRTC offer; if patient, notify doctor
-      if (isDoctor) {
-        setTimeout(() => {
-          createAndSendOffer(currentSession._id);
-        }, 800);
-      } else {
-        setTimeout(() => {
-          broadcastReady(currentSession._id);
-        }, 800);
-      }
-
-      if (!timerRef.current) {
-        timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-      }
+      const sess = res.data.session;
+      setSession(sess);
+      sessionRef.current = sess;
+      setMessages(sess.messages || []);
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+      setAlert({ type: 'success', message: 'Live consultation started. Video connecting...' });
+      setTimeout(() => mountJitsi(sess), 400);
     } catch (err) {
-      setAlert({ 
-        type: 'error', 
-        message: err.response?.data?.message || 'Failed to start or join session.' 
-      });
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to start consultation.' });
     } finally {
       setStarting(false);
     }
   };
 
-  // 4. Send chat message
+  // ─── Send Chat Message ────────────────────────────────────────────────────
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     if (!chatInput.trim() || !session?._id || sendingMsg) return;
-
     const text = chatInput.trim();
     setChatInput('');
     setSendingMsg(true);
-
     try {
       const res = await api.post(`/consultation/${session._id}/message`, { text });
-      if (res.data?.messages) {
-        setMessages(res.data.messages);
-      }
-    } catch (err) {
+      if (res.data?.messages) setMessages(res.data.messages);
+    } catch {
       setAlert({ type: 'error', message: 'Failed to send message.' });
     } finally {
       setSendingMsg(false);
     }
   };
 
+  // ─── ML Disease Prediction ────────────────────────────────────────────────
+  const runMlPrediction = async () => {
+    setMlLoading(true);
+    setShowMlPanel(true);
+    try {
+      const chatTranscript = messages.map(m => ({ text: m.text || '' }));
+      const res = await api.post('/consultation/predict-disease', {
+        symptoms: appointment?.symptoms || '',
+        clinicalNotes: notes,
+        chatTranscript
+      });
+      setMlPredictions(res.data);
+    } catch (err) {
+      setAlert({ type: 'error', message: 'ML prediction failed: ' + (err.response?.data?.message || 'Server error') });
+    } finally {
+      setMlLoading(false);
+    }
+  };
+
   const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
-  // Doctor Action: Mark as Completed (Works anytime, e.g. after 5, 10 or 15 mins)
+  // ─── Doctor: Mark as Completed ────────────────────────────────────────────
   const markAsCompleted = async () => {
     setEnding(true);
     try {
       if (session?._id) {
         await api.post(`/consultation/${session._id}/end`, {
           consultationNotes: notes,
-          duration: Math.floor(elapsed / 60) || 1,
+          duration: Math.floor(elapsed / 60) || 1
         });
       }
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'completed' });
       clearInterval(timerRef.current);
-      stopCamera();
+      stopJitsi();
       navigate(`/prescription/appointment/${appointmentId}`);
     } catch (err) {
       setAlert({ type: 'error', message: 'Failed to complete consultation.' });
@@ -872,17 +426,17 @@ export default function ConsultationRoom() {
     }
   };
 
-  // Doctor Action: Mark as Incomplete
+  // ─── Doctor: Mark as Incomplete ───────────────────────────────────────────
   const markAsIncomplete = async () => {
-    if (!window.confirm('Mark this consultation as incomplete? The session will be concluded.')) return;
+    if (!window.confirm('Mark this consultation as incomplete?')) return;
     setEnding(true);
     try {
       await api.patch(`/appointments/${appointmentId}/status`, { status: 'incomplete' });
       clearInterval(timerRef.current);
-      stopCamera();
+      stopJitsi();
       navigate('/doctor/appointments');
     } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to update status to incomplete.' });
+      setAlert({ type: 'error', message: 'Failed to update status.' });
     } finally {
       setEnding(false);
     }
@@ -891,12 +445,12 @@ export default function ConsultationRoom() {
   const isCompleted = appointment?.status === 'completed' || session?.status === 'completed';
   const isIncomplete = appointment?.status === 'incomplete';
 
-  const doctorName = appointment?.doctor?.name?.startsWith('Dr.') 
-    ? appointment?.doctor?.name 
+  const doctorName = appointment?.doctor?.name?.startsWith('Dr.')
+    ? appointment?.doctor?.name
     : `Dr. ${appointment?.doctor?.name || 'Specialist'}`;
   const patientName = appointment?.patient?.name || 'Patient';
 
-  // ─── IF COMPLETED OR INCOMPLETE: STRICT LOCK SCREEN ──────────────────────────
+  // ─── Completed / Incomplete screen ───────────────────────────────────────
   if (isCompleted || isIncomplete) {
     return (
       <Layout>
@@ -907,56 +461,35 @@ export default function ConsultationRoom() {
             }`}>
               {isCompleted ? <CheckCircle className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
             </div>
-
             <div>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${
-                isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-              }`}>
-                {isCompleted ? 'Consultation Concluded' : 'Consultation Incomplete'}
-              </span>
-              <h1 className="text-2xl font-black text-slate-900 mt-3">
-                {isCompleted ? 'This Consultation is Completed' : 'Consultation Marked Incomplete'}
+              <h1 className="text-2xl font-black text-slate-900">
+                {isCompleted ? 'Consultation Completed' : 'Consultation Marked Incomplete'}
               </h1>
-              <p className="text-sm text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-                {isCompleted 
-                  ? 'This appointment has been concluded by the physician. Rejoining is disabled. You can view the issued e-prescription below.' 
-                  : 'This session was marked as incomplete (e.g. dropped call or unfulfilled appointment). You may reschedule or book a new slot.'}
+              <p className="text-sm text-slate-500 mt-2 max-w-sm mx-auto">
+                {isCompleted
+                  ? 'This appointment has been concluded. View your e-prescription below.'
+                  : 'This session was marked incomplete. Please reschedule if needed.'}
               </p>
             </div>
-
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left space-y-1.5 max-w-md mx-auto">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Doctor:</span>
-                <span className="font-bold text-slate-900">{doctorName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Patient:</span>
-                <span className="font-bold text-slate-900">{patientName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Date:</span>
-                <span className="font-semibold text-slate-800">
-                  {formatAppointmentDate(appointment?.date)}
-                </span>
-              </div>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left space-y-1.5 max-w-xs mx-auto">
+              <div className="flex justify-between"><span className="text-slate-500">Doctor:</span><span className="font-bold">{doctorName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Patient:</span><span className="font-bold">{patientName}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Date:</span><span className="font-semibold">{formatAppointmentDate(appointment?.date)}</span></div>
             </div>
-
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
               {isCompleted && (
                 <Link
                   to={`/prescription/appointment/${appointmentId}`}
-                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-all flex items-center justify-center space-x-2"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md flex items-center space-x-2"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>View Official e-Prescription</span>
+                  <FileText className="w-4 h-4" /><span>View e-Prescription</span>
                 </Link>
               )}
               <Link
                 to={isDoctor ? '/doctor/appointments' : '/patient/appointments'}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center space-x-2"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center space-x-2"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Return to Appointments</span>
+                <ArrowLeft className="w-4 h-4" /><span>Back to Appointments</span>
               </Link>
             </div>
           </div>
@@ -965,6 +498,7 @@ export default function ConsultationRoom() {
     );
   }
 
+  // ─── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <Layout>
@@ -975,7 +509,7 @@ export default function ConsultationRoom() {
     );
   }
 
-  // ─── IF PATIENT AND DOCTOR HAS NOT STARTED CONSULTATION YET: WAITING ROOM ───
+  // ─── Patient Waiting Room ─────────────────────────────────────────────────
   if (!isDoctor && (!session || session.status !== 'in-progress')) {
     return (
       <Layout>
@@ -985,21 +519,18 @@ export default function ConsultationRoom() {
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
               <span>Consultation Waiting Room</span>
             </div>
-            <h1 className="text-2xl font-black text-slate-900">
-              Waiting for Dr. {doctorName?.replace(/^Dr\.\s*/, '')}
-            </h1>
-            <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
-              Your appointment is confirmed. The consultation will activate automatically the moment the doctor starts the call.
+            <h1 className="text-2xl font-black text-slate-900">Waiting for {doctorName}</h1>
+            <p className="text-sm text-slate-500 max-w-md mx-auto">
+              Your appointment is confirmed. The video call will start automatically once the doctor begins the consultation.
             </p>
           </div>
 
-          {/* Doctor Details Card */}
           <div className="glass-card p-5 rounded-2xl border border-slate-200 bg-white shadow-card flex items-center space-x-4">
-            <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center font-bold text-xl flex-shrink-0 shadow-xs">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center font-bold text-xl flex-shrink-0">
               {doctorName?.replace(/^Dr\.\s*/, '')?.charAt(0) || 'D'}
             </div>
             <div className="flex-1">
-              <h3 className="font-bold text-slate-900 text-base">{doctorName}</h3>
+              <h3 className="font-bold text-slate-900">{doctorName}</h3>
               <p className="text-xs font-semibold text-blue-600">{appointment?.doctor?.specialization || 'Consultant Physician'}</p>
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1.5">
                 <span className="flex items-center space-x-1">
@@ -1012,93 +543,32 @@ export default function ConsultationRoom() {
                 </span>
               </div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <span className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200">
-                Awaiting Doctor
-              </span>
+            <span className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200">Awaiting Doctor</span>
+          </div>
+
+          <div className="glass-card p-5 rounded-2xl border border-slate-200 bg-white shadow-card text-center space-y-3">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-blue-50 flex items-center justify-center">
+              <Video className="w-6 h-6 text-blue-600" />
+            </div>
+            <p className="text-sm font-semibold text-slate-700">Video call will launch automatically</p>
+            <p className="text-xs text-slate-500">Make sure your camera and microphone are connected and browser permissions are granted.</p>
+            <div className="flex items-center justify-center space-x-2 pt-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-semibold text-emerald-700">Checking every 2.5 seconds...</span>
             </div>
           </div>
 
-          {/* Video & Mic Check for Patient */}
-          <div className="glass-card p-5 rounded-2xl border border-slate-200 bg-white shadow-card space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Device Check (Camera & Audio)</span>
-              <span className="text-xs text-emerald-600 font-semibold flex items-center space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Ready to Connect</span>
-              </span>
-            </div>
-
-            <div className="aspect-video max-w-sm mx-auto rounded-2xl bg-slate-900 relative overflow-hidden flex items-center justify-center shadow-inner">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full h-full object-cover ${hasCamera && camOn ? 'block' : 'hidden'}`}
-              />
-              {(!hasCamera || !camOn) && (
-                <div className="flex flex-col items-center justify-center p-4 text-center">
-                  <User className="w-12 h-12 text-slate-500 mb-2" />
-                  <p className="text-xs text-slate-400 font-semibold">{camOn ? 'Camera preview inactive' : 'Camera Muted'}</p>
-                </div>
-              )}
-              <div className="absolute bottom-2.5 left-2.5 flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-black/75 text-white text-[11px] font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>{user?.name} (You)</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center space-x-3 pt-1">
-              <button
-                onClick={toggleMic}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                  micOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                }`}
-              >
-                {micOn ? <Mic className="w-3.5 h-3.5 text-slate-700" /> : <MicOff className="w-3.5 h-3.5 text-rose-600" />}
-                <span>{micOn ? 'Microphone On' : 'Microphone Muted'}</span>
-              </button>
-              <button
-                onClick={toggleCam}
-                className={`flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                  camOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                }`}
-              >
-                {camOn ? <Video className="w-3.5 h-3.5 text-slate-700" /> : <VideoOff className="w-3.5 h-3.5 text-rose-600" />}
-                <span>{camOn ? 'Camera On' : 'Camera Off'}</span>
-              </button>
-              <button
-                onClick={startCamera}
-                className="flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
-                title="Restart or re-initialize camera feed"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Test Camera</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="text-center pt-2 space-y-2">
-            <p className="text-xs text-slate-500">
-              ⚡ You do not need to refresh. Once Dr. {doctorName} clicks <strong>Start Consultation</strong>, you will be connected directly.
-            </p>
-            <div>
-              <Link
-                to="/patient/appointments"
-                className="inline-flex items-center space-x-1 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Return to Appointments</span>
-              </Link>
-            </div>
+          <div className="text-center">
+            <Link to="/patient/appointments" className="inline-flex items-center space-x-1 text-xs font-bold text-slate-500 hover:text-slate-800">
+              <ArrowLeft className="w-3.5 h-3.5" /><span>Return to Appointments</span>
+            </Link>
           </div>
         </div>
       </Layout>
     );
   }
 
-  // ─── IF DOCTOR AND CONSULTATION NOT STARTED YET: DOCTOR START WORKSPACE ───
+  // ─── Doctor Pre-Start Workspace ───────────────────────────────────────────
   if (isDoctor && (!session || session.status !== 'in-progress')) {
     return (
       <Layout>
@@ -1108,40 +578,24 @@ export default function ConsultationRoom() {
               <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
                 Doctor Consultation Workspace
               </span>
-              <h1 className="text-2xl font-black text-slate-900 mt-2">
-                Consultation with {patientName}
-              </h1>
+              <h1 className="text-2xl font-black text-slate-900 mt-2">Consultation with {patientName}</h1>
               <p className="text-xs text-slate-500 mt-1">
-                Appointment #{appointmentId?.slice(-6)} · Scheduled for {formatAppointmentDate(appointment?.date)} at {appointment?.timeSlot?.start} – {appointment?.timeSlot?.end}
+                #{appointmentId?.slice(-6)} · {formatAppointmentDate(appointment?.date)} at {appointment?.timeSlot?.start} – {appointment?.timeSlot?.end}
               </p>
             </div>
-
             <button
               onClick={startSession}
               disabled={starting}
-              className="flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 flex-shrink-0 cursor-pointer"
+              className="flex items-center space-x-2 px-6 py-3.5 rounded-2xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all hover:scale-105 disabled:opacity-50 flex-shrink-0"
             >
-              {starting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Activating Call...</span>
-                </>
-              ) : (
-                <>
-                  <Video className="w-5 h-5" />
-                  <span>Start Live Video Consultation</span>
-                </>
-              )}
+              {starting ? <><Loader2 className="w-5 h-5 animate-spin" /><span>Activating...</span></> : <><Video className="w-5 h-5" /><span>Start Live Video Consultation</span></>}
             </button>
           </div>
 
-          {/* Patient Details & Clinical Case Summary */}
           <div className="glass-card p-6 rounded-3xl border border-slate-200 bg-white shadow-card space-y-4">
             <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
-              <User className="w-4 h-4 text-blue-600" />
-              <span>Patient Profile & Case Details</span>
+              <User className="w-4 h-4 text-blue-600" /><span>Patient Profile & Case Details</span>
             </h2>
-
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 block text-[11px]">Patient Name</span>
@@ -1156,26 +610,20 @@ export default function ConsultationRoom() {
                 <span className="font-bold text-rose-600 text-sm">{appointment?.patient?.bloodGroup || '—'}</span>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="text-slate-400 block text-[11px]">Contact Phone</span>
+                <span className="text-slate-400 block text-[11px]">Phone</span>
                 <span className="font-bold text-slate-800 text-sm">{appointment?.patient?.phone || '—'}</span>
               </div>
             </div>
-
             {appointment?.symptoms && (
               <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 text-xs">
                 <span className="font-bold text-blue-900 block mb-1">Chief Complaint & Symptoms:</span>
                 <p className="text-slate-700 leading-relaxed text-sm">{appointment.symptoms}</p>
               </div>
             )}
-
             <div className="pt-2 flex justify-between items-center text-xs text-slate-500 border-t border-slate-100">
-              <span>Appointment Fee: ₹{appointment?.doctor?.consultationFee || 300} · Status: Confirmed</span>
-              <Link
-                to="/doctor/appointments"
-                className="text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center space-x-1"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Return to Schedule</span>
+              <span>Fee: ₹{appointment?.doctor?.consultationFee || 300} · Status: Confirmed</span>
+              <Link to="/doctor/appointments" className="text-xs font-bold text-slate-500 hover:text-slate-800 flex items-center space-x-1">
+                <ArrowLeft className="w-3.5 h-3.5" /><span>Back to Schedule</span>
               </Link>
             </div>
           </div>
@@ -1184,25 +632,18 @@ export default function ConsultationRoom() {
     );
   }
 
+  // ─── ACTIVE CONSULTATION ROOM ─────────────────────────────────────────────
   return (
     <Layout>
-      <div className="space-y-4 max-w-6xl mx-auto">
+      <div className="space-y-4 max-w-7xl mx-auto px-2">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
-        {cameraError && (
-          <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-center space-x-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span>{cameraError}</span>
-          </div>
-        )}
 
         {/* Room Header */}
         <div className="glass-panel p-4 rounded-2xl bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-card">
           <div>
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <h1 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
-                <span>TeleMed Live Consultation Room</span>
-              </h1>
+              <h1 className="text-lg font-bold text-slate-900">TeleMed Live Consultation Room</h1>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase bg-blue-50 text-blue-700 border border-blue-200">
                 {isDoctor ? 'Doctor Workspace' : 'Patient View'}
               </span>
@@ -1211,27 +652,19 @@ export default function ConsultationRoom() {
               Appointment #{appointmentId?.slice(-6)} · {doctorName} with {patientName}
             </p>
           </div>
-
           <div className="flex items-center space-x-2.5">
-            {/* Direct prescription shortcut for doctors */}
             {isDoctor && (
               <Link
                 to={`/doctor/prescription/${appointmentId}`}
                 className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
-                title="Write or edit prescription without ending call"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span>e-Prescription</span>
+                <FileText className="w-3.5 h-3.5" /><span>e-Prescription</span>
               </Link>
             )}
-
-            {/* Connection Status Pill */}
             <div className="flex items-center space-x-1.5 px-3 py-1 rounded-xl border text-xs font-bold text-emerald-700 bg-emerald-50 border-emerald-200">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Stable HD Connection</span>
+              <span>HD Connected</span>
             </div>
-
-            {/* Session Timer */}
             {session && (
               <div className="flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-mono font-bold border border-slate-200">
                 <Clock className="w-3.5 h-3.5 text-blue-600" />
@@ -1241,234 +674,229 @@ export default function ConsultationRoom() {
           </div>
         </div>
 
+        {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Main Video Stage */}
+
+          {/* ── Left 2/3: Video + Controls ── */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Live HD Video Room Container */}
-            <div className="w-full h-[520px] rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl relative">
+
+            {/* Jitsi Video Container — Jitsi renders BOTH cameras side-by-side automatically */}
+            <div className="w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl relative" style={{ height: '520px' }}>
               <div id="jitsi-video-container" className="w-full h-full" />
+
+              {/* Overlay hint for first-timers */}
+              {jitsiMountedRef.current === false && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950 text-slate-400 space-y-3">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  <p className="text-sm font-semibold">Connecting video call...</p>
+                  <p className="text-xs text-slate-500">Both cameras will appear side-by-side once connected</p>
+                </div>
+              )}
             </div>
 
-            {/* Video Controls Bar */}
+            {/* Video Controls */}
             <div className="glass-panel p-3.5 rounded-2xl bg-white flex flex-wrap items-center justify-between gap-3 shadow-card">
               <div className="flex items-center space-x-2">
                 <button
                   onClick={toggleMic}
-                  className={`p-2.5 rounded-xl font-semibold transition-all ${
-                    micOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                  }`}
-                  title={micOn ? 'Mute Mic' : 'Unmute Mic'}
+                  className={`p-2.5 rounded-xl font-semibold transition-all ${micOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}
+                  title={micOn ? 'Mute' : 'Unmute'}
                 >
                   {micOn ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={toggleCam}
-                  className={`p-2.5 rounded-xl font-semibold transition-all ${
-                    camOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'
-                  }`}
-                  title={camOn ? 'Turn Camera Off' : 'Turn Camera On'}
+                  className={`p-2.5 rounded-xl font-semibold transition-all ${camOn ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}
+                  title={camOn ? 'Turn Off Camera' : 'Turn On Camera'}
                 >
                   {camOn ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                 </button>
-                {!hasCamera && (
-                  <button
-                    onClick={startCamera}
-                    className="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors"
-                    title="Enable Camera Device"
-                  >
-                    <Camera className="w-4 h-4" />
-                  </button>
-                )}
-                {session && (
-                  <button
-                    onClick={handleReconnect}
-                    disabled={reconnecting}
-                    className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all disabled:opacity-50"
-                    title="Reconnect WebRTC two-way video and audio stream"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${reconnecting ? 'animate-spin' : ''}`} />
-                    <span>{reconnecting ? 'Reconnecting...' : 'Reconnect Call'}</span>
-                  </button>
-                )}
+                <button
+                  onClick={handleReconnect}
+                  className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all"
+                  title="Reload video connection"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-600" /><span>Reload Video</span>
+                </button>
               </div>
 
-              {/* Action Buttons for Doctor & Patient */}
               <div className="flex items-center space-x-2">
-                {!session ? (
-                  <button
-                    onClick={startSession}
-                    disabled={starting}
-                    className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/25 transition-all disabled:opacity-50"
-                  >
-                    {starting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Connecting...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Video className="w-4 h-4" />
-                        <span>{isDoctor ? 'Start Consultation' : 'Join Consultation Call'}</span>
-                      </>
-                    )}
-                  </button>
-                ) : isDoctor ? (
+                {isDoctor ? (
                   <>
-                    {/* Mark as Completed: Works anytime (15 mins, 30 mins, etc.) */}
+                    <button
+                      onClick={runMlPrediction}
+                      disabled={mlLoading}
+                      className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors disabled:opacity-50"
+                      title="Run ML disease prediction on symptoms and notes"
+                    >
+                      <Brain className="w-3.5 h-3.5" />
+                      <span>{mlLoading ? 'Analyzing...' : 'AI Diagnosis'}</span>
+                    </button>
                     <button
                       onClick={markAsCompleted}
                       disabled={ending}
                       className="flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-all disabled:opacity-50"
-                      title="Finish and mark completed (even if ahead of schedule)"
                     >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>{ending ? 'Completing...' : 'Mark as Completed'}</span>
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      <span>{ending ? 'Completing...' : 'Complete & Prescribe'}</span>
                     </button>
-
-                    {/* Mark as Incomplete (if call dropped or disconnected) */}
                     <button
                       onClick={markAsIncomplete}
                       disabled={ending}
                       className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors disabled:opacity-50"
-                      title="Mark session incomplete if call dropped or unfulfilled"
                     >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Mark Incomplete</span>
-                    </button>
-
-                    {/* End & Prescribe */}
-                    <button
-                      onClick={markAsCompleted}
-                      disabled={ending}
-                      className="flex items-center space-x-1 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
-                      title="End meeting and proceed to e-prescription"
-                    >
-                      <PhoneOff className="w-3.5 h-3.5 text-rose-600" />
-                      <span>End & Prescribe</span>
+                      <XCircle className="w-3.5 h-3.5" /><span>Incomplete</span>
                     </button>
                   </>
                 ) : (
                   <button
-                    onClick={() => { stopCamera(); navigate('/patient/dashboard'); }}
+                    onClick={() => { stopJitsi(); navigate('/patient/dashboard'); }}
                     className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
                   >
-                    <PhoneOff className="w-4 h-4 text-rose-600" />
-                    <span>Leave Call</span>
+                    <PhoneOff className="w-4 h-4 text-rose-600" /><span>Leave Call</span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* SRS FR-5/FR-6 Diagnostics (Clean, Unobtrusive Accordion) */}
-            <div className="border border-slate-200 rounded-2xl bg-white overflow-hidden shadow-xs">
-              <button
-                type="button"
-                onClick={() => setShowDiagnostics(!showDiagnostics)}
-                className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <span className="flex items-center space-x-1.5">
-                  <Wifi className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Network Resilience & Diagnostics (SRS FR-5 & FR-6)</span>
-                </span>
-                <span className="text-[11px] text-blue-600">{showDiagnostics ? 'Hide ▲' : 'Show Tools ▼'}</span>
-              </button>
-              {showDiagnostics && (
-                <div className="p-4 border-t border-slate-100 bg-slate-50/60 space-y-2">
-                  <p className="text-[11px] text-slate-500">
-                    Test bandwidth degradation and automatic reconnect within 3 seconds under SRS FR-6 without session loss.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => {
-                        setAlert({ type: 'info', message: 'Simulating auto-reconnect test. State preserved.' });
-                        setTimeout(() => setAlert({ type: 'success', message: 'Reconnected successfully within 3s.' }), 2500);
-                      }}
-                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100"
-                    >
-                      Test Network Drop (Auto-Reconnect)
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAlert({ type: 'info', message: 'Adaptive bitrate stepped to low-bandwidth profile. Audio clear.' });
-                      }}
-                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100"
-                    >
-                      Test Low Bandwidth Adaptation
-                    </button>
+            {/* ML Disease Prediction Panel */}
+            {isDoctor && showMlPanel && (
+              <div className="glass-panel rounded-2xl bg-white shadow-card border border-purple-100 overflow-hidden">
+                <div className="px-4 py-3 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Brain className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-bold text-purple-900">TeleMed-SymptomNet AI — Disease Prediction</span>
                   </div>
+                  <button onClick={() => setShowMlPanel(false)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
                 </div>
-              )}
-            </div>
+
+                {mlLoading && (
+                  <div className="p-6 text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-2" />
+                    <p className="text-sm text-slate-600">Analyzing symptoms, clinical notes, and consultation transcript...</p>
+                  </div>
+                )}
+
+                {!mlLoading && mlPredictions && (
+                  <div className="p-4 space-y-4">
+                    {mlPredictions.predictions?.length > 0 ? (
+                      <>
+                        <div className="text-xs text-slate-500 flex items-center space-x-1.5">
+                          <Zap className="w-3.5 h-3.5 text-purple-500" />
+                          <span>Based on {mlPredictions.corpusWordCount} words analyzed · {mlPredictions.model}</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {mlPredictions.predictions.map((p, i) => (
+                            <div key={i} className={`p-3.5 rounded-xl border ${i === 0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-200'}`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${i === 0 ? 'bg-purple-200 text-purple-800' : 'bg-slate-200 text-slate-700'}`}>
+                                      #{p.rank}
+                                    </span>
+                                    <span className="text-sm font-bold text-slate-900">{p.disease}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">ICD-10: <span className="font-mono font-bold text-blue-700">{p.icd10Code}</span></div>
+                                </div>
+                                <div className="flex-shrink-0 text-right">
+                                  <div className={`text-lg font-black ${i === 0 ? 'text-purple-700' : 'text-slate-600'}`}>
+                                    {p.confidence}%
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">confidence</div>
+                                </div>
+                              </div>
+
+                              {/* Confidence bar */}
+                              <div className="mt-2 w-full bg-slate-200 rounded-full h-1.5">
+                                <div
+                                  className={`h-1.5 rounded-full ${i === 0 ? 'bg-purple-500' : 'bg-slate-400'}`}
+                                  style={{ width: `${p.confidence}%` }}
+                                />
+                              </div>
+
+                              {p.matchedSymptoms?.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {p.matchedSymptoms.map((kw, j) => (
+                                    <span key={j} className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                                      {kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start space-x-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-amber-800">{mlPredictions.disclaimer}</p>
+                        </div>
+
+                        <button
+                          onClick={runMlPrediction}
+                          className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center space-x-1"
+                        >
+                          <RefreshCw className="w-3 h-3" /><span>Re-analyze with latest notes</span>
+                        </button>
+                      </>
+                    ) : (
+                      <div className="p-4 text-center space-y-2">
+                        <TrendingUp className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-sm font-semibold text-slate-600">{mlPredictions.message}</p>
+                        <p className="text-xs text-slate-400">{mlPredictions.analysisNote}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Right Column: In-Call Live Chat & Clinical Details */}
+          {/* ── Right 1/3: Chat + Notes + Summary ── */}
           <div className="space-y-4 flex flex-col h-full">
-            <div className="glass-panel rounded-2xl bg-white shadow-card flex flex-col h-[520px]">
+            <div className="glass-panel rounded-2xl bg-white shadow-card flex flex-col" style={{ height: '520px' }}>
               {/* Tab Selector */}
               <div className="flex border-b border-slate-100 p-2 gap-1 bg-slate-50/60 rounded-t-2xl">
                 <button
-                  type="button"
                   onClick={() => setActiveTab('chat')}
-                  className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                    activeTab === 'chat'
-                      ? 'bg-white text-blue-700 shadow-xs border border-blue-100'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
+                  className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'chat' ? 'bg-white text-blue-700 shadow-xs border border-blue-100' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span>In-Call Live Chat</span>
+                  <span>Live Chat</span>
                   {messages.length > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px]">
-                      {messages.length}
-                    </span>
+                    <span className="ml-1 px-1.5 rounded-full bg-blue-100 text-blue-700 text-[10px]">{messages.length}</span>
                   )}
                 </button>
                 {isDoctor && (
                   <button
-                    type="button"
                     onClick={() => setActiveTab('notes')}
-                    className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                      activeTab === 'notes'
-                        ? 'bg-white text-blue-700 shadow-xs border border-blue-100'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
+                    className={`flex-1 flex items-center justify-center space-x-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all ${activeTab === 'notes' ? 'bg-white text-blue-700 shadow-xs border border-blue-100' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Clinical Notes</span>
+                    <FileText className="w-3.5 h-3.5" /><span>Clinical Notes</span>
                   </button>
                 )}
               </div>
 
-              {/* Tab Content: LIVE CHAT */}
+              {/* Chat Tab */}
               {activeTab === 'chat' && (
                 <div className="flex-1 flex flex-col p-3 overflow-hidden">
-                  {/* Stable Chat Container with local ref to prevent window dragging */}
                   <div ref={chatContainerRef} className="flex-1 overflow-y-auto space-y-2.5 pr-1">
                     {messages.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400">
+                      <div className="h-full flex flex-col items-center justify-center text-center p-4">
                         <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
-                        <p className="text-xs font-semibold text-slate-600">No messages yet in this consultation</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Type below to chat securely with counterpart</p>
+                        <p className="text-xs font-semibold text-slate-600">No messages yet</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Type below to chat with the {isDoctor ? 'patient' : 'doctor'}</p>
                       </div>
                     ) : (
                       messages.map((msg, i) => {
                         const isMe = msg.senderId === user?._id || msg.senderRole === user?.role;
-                        const isDocSender = msg.senderRole === 'doctor';
                         return (
-                          <div
-                            key={i}
-                            className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                          >
+                          <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                             <span className="text-[10px] font-bold text-slate-400 mb-0.5 px-1">
-                              {msg.senderName} ({isDocSender ? 'Doctor' : 'Patient'})
+                              {msg.senderName} ({msg.senderRole === 'doctor' ? 'Doctor' : 'Patient'})
                             </span>
-                            <div
-                              className={`max-w-[85%] p-2.5 rounded-2xl text-xs leading-relaxed ${
-                                isMe
-                                  ? 'bg-blue-600 text-white rounded-tr-none shadow-xs'
-                                  : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200'
-                              }`}
-                            >
+                            <div className={`max-w-[85%] p-2.5 rounded-2xl text-xs leading-relaxed ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200'}`}>
                               {msg.text}
                             </div>
                             <span className="text-[9px] text-slate-400 mt-0.5 px-1">
@@ -1479,22 +907,19 @@ export default function ConsultationRoom() {
                       })
                     )}
                   </div>
-
-                  {/* Message Input Box */}
                   <form onSubmit={handleSendMessage} className="pt-2 border-t border-slate-100 flex items-center gap-2">
                     <input
                       type="text"
                       disabled={!session}
                       value={chatInput}
                       onChange={e => setChatInput(e.target.value)}
-                      placeholder={session ? "Type a message..." : "Start session to chat..."}
+                      placeholder={session ? 'Type a message...' : 'Session not started'}
                       className="glass-input flex-1 px-3 py-2 rounded-xl text-xs bg-white disabled:opacity-50"
                     />
                     <button
                       type="submit"
                       disabled={!session || !chatInput.trim() || sendingMsg}
-                      className="p-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-xs"
-                      title="Send message"
+                      className="p-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
                     >
                       {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </button>
@@ -1502,35 +927,35 @@ export default function ConsultationRoom() {
                 </div>
               )}
 
-              {/* Tab Content: CLINICAL NOTES (Doctor only) */}
+              {/* Clinical Notes Tab (Doctor only) */}
               {activeTab === 'notes' && isDoctor && (
                 <div className="flex-1 flex flex-col p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700">Live Observation & Diagnosis</span>
-                    <Link
-                      to={`/doctor/prescription/${appointmentId}`}
-                      className="text-xs font-bold text-blue-600 hover:underline flex items-center space-x-1"
-                    >
-                      <span>Prescription Form</span>
-                      <ExternalLink className="w-3 h-3" />
+                    <Link to={`/doctor/prescription/${appointmentId}`} className="text-xs font-bold text-blue-600 hover:underline flex items-center space-x-1">
+                      <span>Prescription</span><ExternalLink className="w-3 h-3" />
                     </Link>
                   </div>
                   <textarea
-                    rows={12}
+                    rows={10}
                     value={notes}
                     onChange={e => setNotes(e.target.value)}
-                    disabled={!session}
-                    placeholder={session ? "Document symptoms, vital signs, and diagnostic conclusions..." : "Start consultation session to type clinical notes"}
-                    className="glass-input w-full p-2.5 rounded-xl text-xs bg-white resize-none flex-1 disabled:opacity-50"
+                    placeholder="Document symptoms, vital signs, and diagnostic conclusions... These notes feed into AI diagnosis."
+                    className="glass-input w-full p-2.5 rounded-xl text-xs bg-white resize-none flex-1"
                   />
-                  <p className="text-[11px] text-slate-400">
-                    Auto-saved to patient record and populated onto your e-prescription form upon completion.
-                  </p>
+                  <button
+                    onClick={runMlPrediction}
+                    disabled={mlLoading}
+                    className="flex items-center justify-center space-x-2 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 transition-colors disabled:opacity-50"
+                  >
+                    <Brain className="w-3.5 h-3.5" />
+                    <span>{mlLoading ? 'Analyzing symptoms...' : 'Run AI Diagnosis on Notes'}</span>
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Patient / Appointment Context Summary Box */}
+            {/* Appointment Summary */}
             <div className="glass-panel p-3.5 rounded-2xl bg-white shadow-card text-xs space-y-1.5">
               <div className="flex justify-between py-1 border-b border-slate-100">
                 <span className="text-slate-500">{isDoctor ? 'Patient' : 'Doctor'}</span>
@@ -1541,15 +966,13 @@ export default function ConsultationRoom() {
                 <span className="font-semibold text-slate-800">{formatAppointmentDate(appointment?.date)}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">Scheduled Time</span>
+                <span className="text-slate-500">Time</span>
                 <span className="font-semibold text-slate-800">{appointment?.timeSlot?.start} – {appointment?.timeSlot?.end}</span>
               </div>
               {appointment?.symptoms && (
                 <div className="pt-1">
                   <span className="text-slate-500 block mb-0.5">Symptoms:</span>
-                  <p className="p-2 rounded-xl bg-blue-50/50 text-slate-800 text-[11px] border border-blue-100">
-                    {appointment.symptoms}
-                  </p>
+                  <p className="p-2 rounded-xl bg-blue-50/50 text-slate-800 text-[11px] border border-blue-100">{appointment.symptoms}</p>
                 </div>
               )}
             </div>

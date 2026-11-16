@@ -22,12 +22,15 @@ import ConsultationRoom from './pages/doctor/ConsultationRoom';
 import PrescriptionForm from './pages/doctor/PrescriptionForm';
 import DoctorAppointments from './pages/doctor/DoctorAppointments';
 import DoctorPatients from './pages/doctor/DoctorPatients';
+import LeaveRequest from './pages/doctor/LeaveRequest';
 
 // Admin pages
 import AdminDashboard from './pages/admin/Dashboard';
 import UserManagement from './pages/admin/UserManagement';
 import Reports from './pages/admin/Reports';
 import AuditLogs from './pages/admin/AuditLogs';
+import LeaveManagement from './pages/admin/LeaveManagement';
+import AdminDelegation from './pages/admin/AdminDelegation';
 
 // Shared
 import Profile from './pages/Profile';
@@ -106,12 +109,15 @@ function AppRoutes() {
         <Route path="/doctor/consultation/:appointmentId" element={<ProtectedRoute roles={['doctor']}><ConsultationRoom /></ProtectedRoute>} />
         <Route path="/doctor/prescription" element={<ProtectedRoute roles={['doctor']}><PrescriptionForm /></ProtectedRoute>} />
         <Route path="/doctor/prescription/:appointmentId" element={<ProtectedRoute roles={['doctor']}><PrescriptionForm /></ProtectedRoute>} />
+        <Route path="/doctor/leaves" element={<ProtectedRoute roles={['doctor']}><LeaveRequest /></ProtectedRoute>} />
 
         {/* ── Admin ── */}
         <Route path="/admin/dashboard" element={<ProtectedRoute roles={['admin']}><AdminDashboard /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
         <Route path="/admin/reports" element={<ProtectedRoute roles={['admin']}><Reports /></ProtectedRoute>} />
         <Route path="/admin/audit-logs" element={<ProtectedRoute roles={['admin']}><AuditLogs /></ProtectedRoute>} />
+        <Route path="/admin/leaves" element={<ProtectedRoute roles={['admin']}><LeaveManagement /></ProtectedRoute>} />
+        <Route path="/admin/delegation" element={<ProtectedRoute roles={['admin']}><AdminDelegation /></ProtectedRoute>} />
 
         {/* ── Shared ── */}
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
