@@ -50,19 +50,6 @@ router.post('/start', auth, async (req, res) => {
       });
     }
 
-    // Block joining if appointment date hasn't arrived yet
-    const apptDateUTC = new Date(appointment.date);
-    apptDateUTC.setUTCHours(0, 0, 0, 0);
-    const todayUTC = new Date();
-    todayUTC.setUTCHours(0, 0, 0, 0);
-    if (apptDateUTC > todayUTC && req.user.role !== 'admin') {
-      return res.status(403).json({
-        message: `This appointment is scheduled for ${apptDateUTC.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}. The consultation room will only open on that date.`,
-        isFutureDate: true,
-        appointmentDate: appointment.date
-      });
-    }
-
     // Check if a session already exists for this appointment
     let session = await ConsultationSession.findOne({ appointment: appointmentId }).sort({ createdAt: -1 });
     if (session) {
