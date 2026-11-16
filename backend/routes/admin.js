@@ -327,12 +327,27 @@ router.post('/delegate', auth, strictAdminOnly, async (req, res) => {
       return res.status(400).json({ message: 'Administrative responsibility can only be delegated to registered doctors.' });
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    let start = new Date(startDate);
+    let end = new Date(endDate);
 
-    if (isNaN(start) || isNaN(end) || end <= start) {
+    if (isNaN(start) || isNaN(end) || end < start) {
       return res.status(400).json({ message: 'Invalid date range.' });
     }
+
+    // If start date is today or in the past, activate immediately (1 minute ago)
+    const now = new Date();
+    const startDateString = typeof startDate === 'string' ? startDate.split('T')[0] : '';
+    const todayLocal = new Date(Date.now() + 5.5 * 3600000).toISOString().split('T')[0];
+    const todayUTC = now.toISOString().split('T')[0];
+
+    if (startDateString <= todayLocal || startDateString <= todayUTC) {
+      start = new Date(Date.now() - 60000);
+    } else {
+      start.setUTCHours(0, 0, 0, 0);
+    }
+
+    // Set end date to 23:59:59.999 UTC so delegation stays active throughout the entire due date
+    end.setUTCHours(23, 59, 59, 999);
 
     // Deactivate any existing active delegation for this user
     await AdminDelegation.updateMany(

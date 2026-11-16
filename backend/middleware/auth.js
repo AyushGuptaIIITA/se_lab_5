@@ -41,9 +41,9 @@ const auth = async (req, res, next) => {
       const delegation = await AdminDelegation.findOne({
         delegatedTo: user._id,
         isActive: true,
-        startDate: { $lte: now },
+        startDate: { $lte: new Date(now.getTime() + 24 * 3600 * 1000) },
         endDate: { $gte: now }
-      });
+      }).sort({ createdAt: -1 });
       req.user.isDelegatedAdmin = !!delegation;
       req.user.delegation = delegation || null;
     } else {

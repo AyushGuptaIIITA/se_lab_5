@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, Clock, Users, CheckCircle, Video, FileText, RefreshCw, ChevronRight, Loader2, Check, X, Stethoscope, ShieldCheck } from 'lucide-react';
+import { 
+  Calendar, Clock, Users, CheckCircle, Video, FileText, RefreshCw, 
+  ChevronRight, Loader2, Check, X, Stethoscope, ShieldCheck, Shield, 
+  BarChart3, ArrowRight, Sparkles 
+} from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
@@ -25,7 +29,7 @@ function StatCard({ icon: Icon, label, value, colorClass, borderClass }) {
 }
 
 export default function DoctorDashboard() {
-  const { user } = useAuth();
+  const { user, isDelegatedAdminActive } = useAuth();
   const { t } = useLanguage();
   const { subscribe } = useSocket();
   const [appointments, setAppointments] = useState([]);
@@ -85,6 +89,87 @@ export default function DoctorDashboard() {
     <Layout>
       <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
+
+        {/* Delegated Admin Control Hub Banner (Only rendered if permission is actively granted) */}
+        {isDelegatedAdminActive && (
+          <div className="relative overflow-hidden rounded-3xl p-6 sm:p-7 bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-950 text-white shadow-xl shadow-purple-950/30 border border-purple-500/40">
+            <div className="absolute -top-16 -right-16 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative z-10 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-11 h-11 rounded-2xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 flex-shrink-0">
+                    <Shield className="w-5 h-5 text-amber-300 animate-pulse" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                        Admin Access Granted
+                      </span>
+                      <span className="text-xs text-purple-200">
+                        Valid Until: <strong className="text-white">{user?.delegation?.endDate ? new Date(user.delegation.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Active'}</strong>
+                      </span>
+                    </div>
+                    <h2 className="text-lg font-black text-white mt-0.5">
+                      Executive Administrator Responsibility Delegated to You
+                    </h2>
+                  </div>
+                </div>
+
+                <Link
+                  to="/admin/dashboard"
+                  className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-2xl text-xs font-bold text-purple-950 bg-gradient-to-r from-amber-300 via-amber-200 to-amber-300 hover:from-amber-200 hover:to-amber-100 shadow-md shadow-amber-500/20 transition-all hover:scale-105 active:scale-95 flex-shrink-0"
+                >
+                  <ShieldCheck className="w-4 h-4 text-purple-950" />
+                  <span>Switch to Admin Control Portal</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              <p className="text-xs text-purple-200 max-w-3xl leading-relaxed">
+                The platform Administrator has temporarily transferred administrative authority to you. You can approve pending doctor & patient accounts, inspect hospital analytics, review leave requests, and monitor audit trails.
+                {user?.delegation?.reason && (
+                  <span className="block mt-1 text-purple-300 italic font-medium">
+                    Delegation Note: "{user.delegation.reason}"
+                  </span>
+                )}
+              </p>
+
+              {/* Quick Admin Navigation Shortcuts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-purple-800/60">
+                <Link
+                  to="/admin/users"
+                  className="flex items-center space-x-2 p-2.5 rounded-xl bg-purple-950/60 hover:bg-purple-800/50 border border-purple-700/40 text-xs font-bold text-purple-100 transition-colors"
+                >
+                  <Users className="w-4 h-4 text-amber-300 flex-shrink-0" />
+                  <span className="truncate">User Approvals</span>
+                </Link>
+                <Link
+                  to="/admin/reports"
+                  className="flex items-center space-x-2 p-2.5 rounded-xl bg-purple-950/60 hover:bg-purple-800/50 border border-purple-700/40 text-xs font-bold text-purple-100 transition-colors"
+                >
+                  <BarChart3 className="w-4 h-4 text-emerald-300 flex-shrink-0" />
+                  <span className="truncate">Hospital Reports</span>
+                </Link>
+                <Link
+                  to="/admin/leaves"
+                  className="flex items-center space-x-2 p-2.5 rounded-xl bg-purple-950/60 hover:bg-purple-800/50 border border-purple-700/40 text-xs font-bold text-purple-100 transition-colors"
+                >
+                  <Calendar className="w-4 h-4 text-blue-300 flex-shrink-0" />
+                  <span className="truncate">Leave Approvals</span>
+                </Link>
+                <Link
+                  to="/admin/audit-logs"
+                  className="flex items-center space-x-2 p-2.5 rounded-xl bg-purple-950/60 hover:bg-purple-800/50 border border-purple-700/40 text-xs font-bold text-purple-100 transition-colors"
+                >
+                  <Shield className="w-4 h-4 text-purple-300 flex-shrink-0" />
+                  <span className="truncate">Audit Trail Logs</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Doctor Header Banner */}
         <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 text-white shadow-xl shadow-blue-500/20">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Stethoscope, LayoutDashboard, Calendar, Search, FileText, Users, BarChart3, Shield, LogOut, User, Globe, Menu, X, Sparkles, Video, Pill } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -29,6 +29,7 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const isDoctorDelegated = Boolean(user?.role === 'doctor' && isDelegatedAdminActive);
   const [delegatedTab, setDelegatedTab] = useState(location.pathname.startsWith('/admin') ? 'admin' : 'doctor');
@@ -41,6 +42,15 @@ export default function Navbar() {
       setDelegatedTab('doctor');
     }
   }, [location.pathname]);
+
+  const handlePortalSwitch = (target) => {
+    setDelegatedTab(target);
+    if (target === 'admin') {
+      navigate('/admin/dashboard');
+    } else {
+      navigate('/doctor/dashboard');
+    }
+  };
 
   if (!user) return null;
 
@@ -135,7 +145,7 @@ export default function Navbar() {
               <div className="flex items-center space-x-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setDelegatedTab('doctor')}
+                  onClick={() => handlePortalSwitch('doctor')}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     delegatedTab === 'doctor'
                       ? 'bg-white text-blue-700 shadow-2xs'
@@ -146,7 +156,7 @@ export default function Navbar() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDelegatedTab('admin')}
+                  onClick={() => handlePortalSwitch('admin')}
                   className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     delegatedTab === 'admin'
                       ? 'bg-purple-600 text-white shadow-2xs'
@@ -258,17 +268,17 @@ export default function Navbar() {
             <div className="flex items-center justify-center space-x-2 p-1 bg-slate-100 rounded-xl mb-3">
               <button
                 type="button"
-                onClick={() => setDelegatedTab('doctor')}
+                onClick={() => { handlePortalSwitch('doctor'); setMobileOpen(false); }}
                 className={`px-3 py-1 rounded-lg text-xs font-bold ${delegatedTab === 'doctor' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600'}`}
               >
-                Clinical
+                Clinical Portal
               </button>
               <button
                 type="button"
-                onClick={() => setDelegatedTab('admin')}
+                onClick={() => { handlePortalSwitch('admin'); setMobileOpen(false); }}
                 className={`flex items-center space-x-1 px-3 py-1 rounded-lg text-xs font-bold ${delegatedTab === 'admin' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700'}`}
               >
-                <Shield className="w-3 h-3" /><span>Admin</span>
+                <Shield className="w-3 h-3" /><span>Admin Portal</span>
               </button>
             </div>
           )}

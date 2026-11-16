@@ -172,9 +172,9 @@ router.post('/login', async (req, res) => {
       const delegation = await AdminDelegation.findOne({
         delegatedTo: user._id,
         isActive: true,
-        startDate: { $lte: now },
+        startDate: { $lte: new Date(now.getTime() + 24 * 3600 * 1000) },
         endDate: { $gte: now }
-      });
+      }).sort({ createdAt: -1 });
       userObj.isDelegatedAdmin = !!delegation;
       userObj.delegation = delegation || null;
     } else {

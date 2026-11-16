@@ -4,6 +4,7 @@ import { Users, UserCheck, Stethoscope, Calendar, BarChart3, Shield, Activity, R
 import Layout from '../../components/Layout';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 function StatCard({ icon: Icon, label, value, colorClass, borderClass, sub }) {
@@ -38,6 +39,7 @@ function MiniBar({ label, value, max, color }) {
 
 export default function AdminDashboard() {
   const { t } = useLanguage();
+  const { user, isDelegatedAdminActive } = useAuth();
   const [reports, setReports] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +74,30 @@ export default function AdminDashboard() {
     <Layout>
       <div className="space-y-6">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
+
+        {/* Delegated Doctor Active Ribbon on Admin Dashboard */}
+        {isDelegatedAdminActive && user?.role === 'doctor' && (
+          <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center space-x-2.5">
+              <Shield className="w-5 h-5 text-purple-700 flex-shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-purple-900">
+                  You are viewing the Administrative Control Hub under Active Role Delegation
+                </p>
+                <p className="text-[11px] text-purple-700">
+                  Valid until {user?.delegation?.endDate ? new Date(user.delegation.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'active due date'} · Automatically revoked when due date passes or by admin cancellation
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/doctor/dashboard"
+              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-2xs self-start sm:self-center"
+            >
+              <span>Return to Doctor Workspace</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        )}
 
         {/* Admin Header */}
         <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white shadow-xl">
