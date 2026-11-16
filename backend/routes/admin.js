@@ -8,6 +8,7 @@ const AuditLog = require('../models/AuditLog');
 const AdminDelegation = require('../models/AdminDelegation');
 const { auth, adminOnly, strictAdminOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
+const emit = require('../utils/emit');
 
 const router = express.Router();
 
@@ -322,8 +323,8 @@ router.post('/delegate', auth, strictAdminOnly, async (req, res) => {
     const targetUser = await User.findById(userId).select('-password');
     if (!targetUser) return res.status(404).json({ message: 'User not found.' });
 
-    if (targetUser.role === 'admin') {
-      return res.status(400).json({ message: 'User is already an admin.' });
+    if (targetUser.role !== 'doctor') {
+      return res.status(400).json({ message: 'Administrative responsibility can only be delegated to registered doctors.' });
     }
 
     const start = new Date(startDate);
@@ -360,6 +361,14 @@ router.post('/delegate', auth, strictAdminOnly, async (req, res) => {
       { delegatedTo: targetUser.name, reason, startDate, endDate },
       req.ip
     );
+
+    try {
+      emit(req, 'delegation:changed', {
+        delegatedTo: targetUser._id.toString(),
+        action: 'granted',
+        endDate: end
+      });
+    } catch {}
 
     res.status(201).json({
       message: `Admin access delegated to ${targetUser.name} until ${end.toLocaleDateString()}.`,
@@ -430,6 +439,13 @@ router.delete('/delegate/:id', auth, strictAdminOnly, async (req, res) => {
       { revokedFrom: delegation.delegatedTo?.name },
       req.ip
     );
+
+    try {
+      emit(req, 'delegation:changed', {
+        delegatedTo: (delegation.delegatedTo?._id || delegation.delegatedTo)?.toString(),
+        action: 'revoked'
+      });
+    } catch {}
 
     res.json({ message: `Admin delegation revoked from ${delegation.delegatedTo?.name}.`, delegation });
   } catch (err) {

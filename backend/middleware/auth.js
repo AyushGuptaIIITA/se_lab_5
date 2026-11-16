@@ -31,6 +31,13 @@ const auth = async (req, res, next) => {
     // Check for active admin delegation
     if (user.role !== 'admin') {
       const now = new Date();
+
+      // Automatically deactivate any delegations where the due date (endDate) has passed
+      await AdminDelegation.updateMany(
+        { delegatedTo: user._id, isActive: true, endDate: { $lt: now } },
+        { $set: { isActive: false } }
+      );
+
       const delegation = await AdminDelegation.findOne({
         delegatedTo: user._id,
         isActive: true,

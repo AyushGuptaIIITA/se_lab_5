@@ -61,14 +61,18 @@ function DashboardRedirect() {
 
 // ─── Protected Route ─────────────────────────────────────────────────────────
 function ProtectedRoute({ children, roles }) {
-  const { user, token, loading } = useAuth();
+  const { user, token, loading, isDelegatedAdminActive } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!token || !user) return <Navigate to="/" replace />;
-  if (roles && !roles.includes(user.role)) {
-    // Wrong role — redirect to their own dashboard
-    if (user.role === 'doctor') return <Navigate to="/doctor/dashboard" replace />;
-    if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
-    return <Navigate to="/patient/dashboard" replace />;
+  if (roles) {
+    const hasRole = roles.includes(user.role);
+    const hasDelegatedAdmin = roles.includes('admin') && isDelegatedAdminActive;
+    if (!hasRole && !hasDelegatedAdmin) {
+      // Wrong role and no active admin delegation — redirect to their own dashboard
+      if (user.role === 'doctor') return <Navigate to="/doctor/dashboard" replace />;
+      if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+      return <Navigate to="/patient/dashboard" replace />;
+    }
   }
   return children;
 }

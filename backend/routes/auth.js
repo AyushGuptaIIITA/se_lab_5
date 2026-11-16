@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const AdminDelegation = require('../models/AdminDelegation');
 const { auth } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 const crypto = require('crypto');
@@ -162,6 +163,25 @@ router.post('/login', async (req, res) => {
     const userObj = user.toObject();
     delete userObj.password;
 
+    if (user.role !== 'admin') {
+      const now = new Date();
+      await AdminDelegation.updateMany(
+        { delegatedTo: user._id, isActive: true, endDate: { $lt: now } },
+        { $set: { isActive: false } }
+      );
+      const delegation = await AdminDelegation.findOne({
+        delegatedTo: user._id,
+        isActive: true,
+        startDate: { $lte: now },
+        endDate: { $gte: now }
+      });
+      userObj.isDelegatedAdmin = !!delegation;
+      userObj.delegation = delegation || null;
+    } else {
+      userObj.isDelegatedAdmin = false;
+      userObj.delegation = null;
+    }
+
     res.json({
       message: 'Login successful.',
       token,
@@ -226,7 +246,10 @@ router.get('/me', auth, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
-    res.json({ user });
+    const userObj = user.toObject();
+    userObj.isDelegatedAdmin = Boolean(req.user.isDelegatedAdmin);
+    userObj.delegation = req.user.delegation || null;
+    res.json({ user: userObj });
   } catch (err) {
     console.error('Get me error:', err);
     res.status(500).json({ message: 'Server error.' });

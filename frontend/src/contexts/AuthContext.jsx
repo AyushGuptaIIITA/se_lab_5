@@ -29,6 +29,41 @@ export function AuthProvider({ children }) {
     initAuth();
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    const savedToken = localStorage.getItem('token');
+    if (!savedToken) return null;
+    try {
+      const res = await api.get('/auth/me');
+      setUser(res.data.user);
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      return res.data.user;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Automatic verification of delegation due date & real-time sync
+  useEffect(() => {
+    if (!token || !user) return;
+
+    // Periodic check every 30s to auto-expire features when due date is reached
+    const interval = setInterval(() => {
+      if (user.isDelegatedAdmin && user.delegation?.endDate) {
+        if (new Date(user.delegation.endDate) < new Date()) {
+          refreshUser();
+        }
+      }
+    }, 30000);
+
+    const onFocus = () => { refreshUser(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [token, user, refreshUser]);
+
   const login = useCallback(async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     const { token: newToken, user: newUser } = res.data;
@@ -64,6 +99,12 @@ export function AuthProvider({ children }) {
     localStorage.setItem('user', JSON.stringify(updated));
   }, [user]);
 
+  const isDelegatedAdminActive = Boolean(
+    user?.isDelegatedAdmin &&
+    user?.delegation?.isActive !== false &&
+    (!user?.delegation?.endDate || new Date(user.delegation.endDate) >= new Date())
+  );
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -73,6 +114,8 @@ export function AuthProvider({ children }) {
       register,
       logout,
       updateUser,
+      refreshUser,
+      isDelegatedAdminActive,
       isAuthenticated: !!token && !!user,
     }}>
       {children}

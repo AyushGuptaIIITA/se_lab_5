@@ -29,8 +29,8 @@ export default function AdminDelegation() {
         api.get('/admin/users?limit=100')
       ]);
       setDelegations(delegRes.data.delegations || []);
-      // Show only doctors and patients who are active
-      setUsers((usersRes.data.users || []).filter(u => u.role !== 'admin' && u.status === 'active'));
+      // Show only active doctors (delegation target is restricted to doctors only)
+      setUsers((usersRes.data.users || []).filter(u => u.role === 'doctor' && u.status === 'active'));
     } catch (err) {
       setAlert({ type: 'error', message: 'Failed to load data.' });
     } finally {
@@ -104,12 +104,12 @@ export default function AdminDelegation() {
 
           <form onSubmit={handleDelegate} className="space-y-4">
             <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Staff Member *</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1.5">Select Doctor for Admin Delegation *</label>
               <div className="relative mb-2">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="Search by name or email..."
+                  placeholder="Search doctors by name or email..."
                   value={userSearch}
                   onChange={e => setUserSearch(e.target.value)}
                   className="glass-input w-full pl-9 pr-3 py-2 rounded-xl text-sm"
@@ -122,10 +122,10 @@ export default function AdminDelegation() {
                 size={4}
                 required
               >
-                <option value="">-- Select a user --</option>
+                <option value="">-- Select a Doctor --</option>
                 {filteredUsers.map(u => (
                   <option key={u._id} value={u._id}>
-                    {u.name} ({u.role}) — {u.email}
+                    {u.name.startsWith('Dr.') ? u.name : `Dr. ${u.name}`} ({u.specialization || 'Consultant Physician'}) — {u.email}
                   </option>
                 ))}
               </select>

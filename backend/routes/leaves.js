@@ -77,7 +77,12 @@ router.get('/', auth, async (req, res) => {
     let filter = {};
 
     if (req.user.role === 'doctor') {
-      filter.doctor = req.user._id;
+      // If doctor is an active delegated admin requesting all leaves (e.g. for leave review), show all
+      if (req.user.isDelegatedAdmin && req.query.scope === 'all') {
+        // no doctor filter -> returns all leave requests
+      } else {
+        filter.doctor = req.user._id;
+      }
     } else if (req.user.role !== 'admin' && !req.user.isDelegatedAdmin) {
       return res.status(403).json({ message: 'Access denied.' });
     }

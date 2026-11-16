@@ -26,7 +26,7 @@ export default function LeaveManagement() {
   const fetchLeaves = async () => {
     setLoading(true);
     try {
-      const params = filterStatus ? `?status=${filterStatus}` : '';
+      const params = filterStatus ? `?scope=all&status=${filterStatus}` : '?scope=all';
       const res = await api.get(`/leaves${params}`);
       setLeaves(res.data.leaves || []);
     } catch (err) {
