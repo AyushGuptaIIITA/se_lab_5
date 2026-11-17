@@ -3,8 +3,10 @@ import { Bell, Check, X, Loader2 } from 'lucide-react';
 import Layout from '../components/Layout';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function NotificationsPage() {
+  const { t } = useLanguage();
   const { notifications, unreadCount, loading, fetchNotifications, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -70,10 +72,10 @@ export default function NotificationsPage() {
           <div>
             <h1 className="text-2xl font-black text-slate-900 flex items-center space-x-2">
               <Bell className="w-6 h-6 text-blue-600" />
-              <span>Notifications</span>
+              <span>{t('Notifications')}</span>
             </h1>
             <p className="text-sm text-slate-500 mt-1">
-              {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+              {unreadCount > 0 ? `${unreadCount} ${t('unread')}` : t('All caught up')}
             </p>
           </div>
           {unreadCount > 0 && (
@@ -82,7 +84,7 @@ export default function NotificationsPage() {
               className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Mark All Read</span>
+              <span>{t('Mark All Read')}</span>
             </button>
           )}
         </div>
@@ -90,13 +92,13 @@ export default function NotificationsPage() {
         {loading && notifications.length === 0 ? (
           <div className="glass-panel p-8 rounded-2xl bg-white text-center">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
-            <p className="text-slate-600">Loading notifications...</p>
+            <p className="text-slate-600">{t('Loading notifications...')}</p>
           </div>
         ) : notifications.length === 0 ? (
           <div className="glass-panel p-12 rounded-2xl bg-white text-center">
             <Bell className="w-16 h-16 mx-auto text-slate-300 mb-4" />
-            <h2 className="text-lg font-bold text-slate-900">No Notifications</h2>
-            <p className="text-sm text-slate-500 mt-2">You're all caught up! New prescriptions and updates will appear here.</p>
+            <h2 className="text-lg font-bold text-slate-900">{t('No notifications yet')}</h2>
+            <p className="text-sm text-slate-500 mt-2">{t("You'll see prescription alerts and updates here")}</p>
           </div>
         ) : (
           <div className="glass-panel rounded-2xl bg-white overflow-hidden" onScroll={handleScroll}>
@@ -146,7 +148,7 @@ export default function NotificationsPage() {
                           }}
                           className="text-xs text-slate-400 hover:text-rose-500 font-semibold"
                         >
-                          Dismiss
+                          {t('Dismiss')}
                         </button>
                       </div>
                     </div>
@@ -164,11 +166,11 @@ export default function NotificationsPage() {
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Loading more...</span>
+                      <span>{t('Loading more...')}</span>
                     </>
                   ) : (
                     <>
-                      <span>Load More Notifications</span>
+                      <span>{t('Load More Notifications')}</span>
                     </>
                   )}
                 </button>

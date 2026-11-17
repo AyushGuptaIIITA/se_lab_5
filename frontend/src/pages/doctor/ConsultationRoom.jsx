@@ -1549,22 +1549,22 @@ export default function ConsultationRoom() {
                         ? 'bg-rose-600 text-white border-rose-600 shadow-sm shadow-rose-300 animate-pulse'
                         : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                     }`}
-                    title={isPatientAudioActive ? 'Stop patient audio AI transcription' : 'Start patient audio AI transcription'}
+                    title={isPatientAudioActive ? t('Stop patient audio AI transcription') : t('Start patient audio AI transcription')}
                     disabled={patientAudioError && !isPatientAudioActive}
                   >
                     {isPatientAudioActive
-                      ? <><Square className="w-3.5 h-3.5" /><span>Stop AI Listen</span></>
-                      : <><Radio className="w-3.5 h-3.5" /><span>AI Listen (Patient)</span></>
+                      ? <><Square className="w-3.5 h-3.5" /><span>{t('Stop AI Listen')}</span></>
+                      : <><Radio className="w-3.5 h-3.5" /><span>{t('AI Listen (Patient)')}</span></>
                     }
                   </button>
                 )}
                 {isDoctor && !remoteStream && (
                   <button
                     className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed"
-                    title="Waiting for patient to join..."
+                    title={t('Waiting for patient to join...')}
                     disabled
                   >
-                    <Radio className="w-3.5 h-3.5" /><span>AI Listen (Patient)</span>
+                    <Radio className="w-3.5 h-3.5" /><span>{t('AI Listen (Patient)')}</span>
                   </button>
                 )}
               </div>
@@ -1616,15 +1616,15 @@ export default function ConsultationRoom() {
                     {isPatientAudioActive && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />}
                     <Activity className="w-4 h-4 text-emerald-600" />
                     <span className="text-sm font-bold text-emerald-900">
-                      {isPatientAudioActive ? 'Patient Audio Capture — AI is transcribing...' : 'Patient Transcript (Captured)'}
+                      {isPatientAudioActive ? t('Patient Audio Capture — AI is transcribing...') : t('Patient Transcript (Captured)')}
                     </span>
                     <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full">
-                      {patientTranscript.split(/\s+/).filter(Boolean).length} words
+                      {patientTranscript.split(/\s+/).filter(Boolean).length} {t('words')}
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <label className="flex items-center space-x-1.5 cursor-pointer">
-                      <span className="text-[11px] font-semibold text-slate-500">Auto-diagnose</span>
+                      <span className="text-[11px] font-semibold text-slate-500">{t('Auto-diagnose')}</span>
                       <div
                         onClick={() => setAutoAnalyze(p => !p)}
                         className={`w-8 h-4 rounded-full transition-colors cursor-pointer ${autoAnalyze ? 'bg-purple-500' : 'bg-slate-300'}`}
@@ -1632,7 +1632,7 @@ export default function ConsultationRoom() {
                         <div className={`w-3 h-3 bg-white rounded-full shadow mt-0.5 transition-transform ${autoAnalyze ? 'translate-x-4' : 'translate-x-1'}`} />
                       </div>
                     </label>
-                    <button onClick={() => { setSpeechKeywords([]); }} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">Clear Keywords</button>
+                    <button onClick={() => { setSpeechKeywords([]); }} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">{t('Clear Keywords')}</button>
                   </div>
                 </div>
 
@@ -1649,7 +1649,7 @@ export default function ConsultationRoom() {
                     <div className="pt-1 border-t border-slate-100">
                       <div className="flex items-center space-x-1.5 mb-1.5">
                         <Zap className="w-3 h-3 text-purple-500" />
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Detected Medical Keywords</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{t('Detected Medical Keywords')}</span>
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {speechKeywords.map((kw, i) => (

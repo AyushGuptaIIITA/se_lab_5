@@ -2,8 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bell, X, Check, ChevronRight, Loader2 } from 'lucide-react';
 import { useNotifications } from '../contexts/NotificationContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function NotificationBell() {
+  const { t } = useLanguage();
   const { notifications, unreadCount, loading, markAsRead, markAllAsRead, deleteNotification, fetchNotifications } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
@@ -75,10 +77,10 @@ export default function NotificationBell() {
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
     
-    if (mins < 1) return 'Just now';
-    if (mins < 60) return `${mins}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
+    if (mins < 1) return t('just now');
+    if (mins < 60) return `${mins}${t('m ago')}`;
+    if (hours < 24) return `${hours}${t('h ago')}`;
+    if (days < 7) return `${days}${t('d ago')}`;
     return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   };
 
@@ -92,7 +94,7 @@ export default function NotificationBell() {
             ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' 
             : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'
         }`}
-        title={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}` : 'Notifications'}
+        title={unreadCount > 0 ? `${unreadCount} ${t('unread')} notification${unreadCount > 1 ? 's' : ''}` : t('Notifications')}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -109,10 +111,10 @@ export default function NotificationBell() {
           <div className="flex items-center justify-between p-3 border-b border-slate-100 bg-slate-50/50">
             <div className="flex items-center space-x-2">
               <Bell className="w-5 h-5 text-blue-600" />
-              <h3 className="font-bold text-slate-900">Notifications</h3>
+              <h3 className="font-bold text-slate-900">{t('Notifications')}</h3>
               {unreadCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold">
-                  {unreadCount} unread
+                  {unreadCount} {t('unread')}
                 </span>
               )}
             </div>
@@ -121,10 +123,10 @@ export default function NotificationBell() {
                 <button
                   onClick={markAllAsRead}
                   className="px-2 py-1 rounded-lg text-[10px] font-bold text-blue-600 hover:bg-blue-50 transition-colors"
-                  title="Mark all as read"
+                  title={t('Mark all as read')}
                 >
                   <Check className="w-3 h-3 inline-block mr-1" />
-                  Read All
+                  {t('Read All')}
                 </button>
               )}
               <button
@@ -141,13 +143,13 @@ export default function NotificationBell() {
             {loading && notifications.length === 0 ? (
               <div className="p-8 text-center">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-600 mx-auto mb-2" />
-                <p className="text-sm text-slate-500">Loading notifications...</p>
+                <p className="text-sm text-slate-500">{t('Loading notifications...')}</p>
               </div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center">
                 <Bell className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                <p className="text-sm font-bold text-slate-700">No notifications yet</p>
-                <p className="text-xs text-slate-400 mt-0.5">You'll see prescription alerts and updates here</p>
+                <p className="text-sm font-bold text-slate-700">{t('No notifications yet')}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{t("You'll see prescription alerts and updates here")}</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
@@ -192,7 +194,7 @@ export default function NotificationBell() {
                           deleteNotification(notification._id);
                         }}
                         className="p-1 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
-                        title="Dismiss"
+                        title={t('Dismiss')}
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -202,6 +204,7 @@ export default function NotificationBell() {
                 {hasMore && loading && (
                   <div className="p-3 text-center">
                     <Loader2 className="w-5 h-5 animate-spin text-blue-600 mx-auto" />
+                    <p className="text-xs text-slate-400 mt-1">{t('Loading more...')}</p>
                   </div>
                 )}
               </div>
@@ -214,7 +217,7 @@ export default function NotificationBell() {
               onClick={() => navigate('/notifications')}
               className="w-full text-center text-xs font-bold text-blue-600 hover:text-blue-700 py-1.5"
             >
-              View All Notifications →
+              {t('View All Notifications')}
             </button>
           </div>
         </div>
