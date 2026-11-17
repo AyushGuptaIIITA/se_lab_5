@@ -11,13 +11,13 @@ function NavLink({ to, icon: Icon, label, onClick }) {
     <Link
       to={to}
       onClick={onClick}
-      className={`relative flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-200 ${
+      className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
         isActive
-          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+          ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
           : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/70'
       }`}
     >
-      <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+      <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
       <span>{label}</span>
     </Link>
   );
@@ -142,11 +142,11 @@ export default function Navbar() {
           {/* Desktop Nav with optional Portal Switcher for Delegated Doctor */}
           <div className="hidden md:flex items-center space-x-2">
             {isDoctorDelegated && (
-              <div className="flex items-center space-x-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+              <div className="flex items-center space-x-1 p-1 bg-purple-50/70 rounded-xl border border-purple-200/70 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => handlePortalSwitch('doctor')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                     delegatedTab === 'doctor'
                       ? 'bg-white text-blue-700 shadow-2xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -157,19 +157,19 @@ export default function Navbar() {
                 <button
                   type="button"
                   onClick={() => handlePortalSwitch('admin')}
-                  className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                     delegatedTab === 'admin'
                       ? 'bg-purple-600 text-white shadow-2xs'
-                      : 'text-purple-700 hover:text-purple-900 hover:bg-purple-50'
+                      : 'text-purple-700 hover:text-purple-900 hover:bg-purple-100/60'
                   }`}
                 >
-                  <Shield className="w-3.5 h-3.5" />
+                  <Shield className="w-3.5 h-3.5 flex-shrink-0" />
                   <span>Admin Portal</span>
                 </button>
               </div>
             )}
 
-            <nav className="flex items-center space-x-1.5 bg-slate-100/70 p-1.5 rounded-2xl border border-slate-200/60">
+            <nav className="flex items-center space-x-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/60">
               {links.map((link) => (
                 <NavLink key={link.to} {...link} />
               ))}
@@ -177,14 +177,14 @@ export default function Navbar() {
           </div>
 
           {/* Right section */}
-          <div className="hidden md:flex items-center space-x-3">
+          <div className="hidden md:flex items-center space-x-2.5 flex-shrink-0">
             {/* Multi-Language Dropdown */}
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <button
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
               >
-                <Globe className="w-3.5 h-3.5 text-blue-600" />
+                <Globe className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
                 <span>{supportedLanguages.find(l => l.code === lang)?.name || 'हिन्दी'}</span>
               </button>
 
@@ -213,19 +213,19 @@ export default function Navbar() {
             {/* User chip */}
             <Link
               to="/profile"
-              className="flex items-center space-x-2.5 pl-2 pr-3 py-1.5 rounded-full border border-slate-200 bg-white hover:border-blue-300 hover:shadow-xs transition-all"
+              className="flex items-center space-x-2 pl-2 pr-2.5 py-1 rounded-full border border-slate-200 bg-white hover:border-blue-300 hover:shadow-xs transition-all flex-shrink-0"
             >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs flex-shrink-0">
                 {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
-              <div className="text-left">
-                <p className="text-xs font-bold text-slate-800 leading-none truncate max-w-[120px]">{user.name}</p>
-                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border inline-block mt-0.5 ${
+              <div className="text-left flex flex-col justify-center">
+                <p className="text-xs font-bold text-slate-800 leading-none truncate max-w-[130px]">{user.name}</p>
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border inline-block mt-0.5 whitespace-nowrap leading-none ${
                   isDoctorDelegated
                     ? 'bg-purple-50 text-purple-700 border-purple-300 font-extrabold'
                     : roleBadgeStyle
                 }`}>
-                  {isDoctorDelegated ? 'Doctor · Delegated Admin' : user.role}
+                  {isDoctorDelegated ? 'Delegated Admin' : user.role}
                 </span>
               </div>
             </Link>
@@ -233,7 +233,7 @@ export default function Navbar() {
             {/* Logout */}
             <button
               onClick={logout}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all flex-shrink-0"
               title={t('logout')}
             >
               <LogOut className="w-4 h-4" />
