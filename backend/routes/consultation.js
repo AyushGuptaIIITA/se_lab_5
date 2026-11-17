@@ -720,8 +720,14 @@ router.post('/predict-disease', auth, async (req, res) => {
       disclaimer: 'These predictions are AI-assisted suggestions based on documented symptoms. Final diagnosis must be made by a qualified medical professional.'
     });
   } catch (err) {
-    console.error('Disease prediction error:', err);
-    res.status(500).json({ message: 'Server error during disease prediction analysis.' });
+    console.error('Disease prediction error:', {
+      message: err.message,
+      stack: err.stack,
+      symptoms,
+      clinicalNotes,
+      chatTranscriptLength: chatTranscript?.length
+    });
+    res.status(500).json({ message: 'Server error during disease prediction analysis.', details: err.message });
   }
 });
 

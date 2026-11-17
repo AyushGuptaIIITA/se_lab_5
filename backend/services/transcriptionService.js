@@ -133,6 +133,44 @@ class TranscriptionService {
    * @private
    */
   async _transcribeWithAssemblyAI(session) {
+    // Helper function for retry logic with exponential backoff
+    const fetchWithRetry = async (url, options, retries = 3, baseDelay = 1000) => {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const response = await fetch(url, options);
+          
+          // Handle rate limiting (429)
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('retry-after');
+            const delay = retryAfter ? parseInt(retryAfter) * 1000 : baseDelay * Math.pow(2, attempt);
+            console.warn(`AssemblyAI rate limited (429). Retry attempt ${attempt + 1}/${retries} after ${delay}ms`);
+            if (attempt < retries) {
+              await new Promise(r => setTimeout(r, delay));
+              continue;
+            }
+            throw new Error('AssemblyAI rate limit exceeded. Please try again later.');
+          }
+          
+          // Handle other HTTP errors
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`AssemblyAI API error: ${response.status} - ${errorData.error || response.statusText}`);
+          }
+          
+          return response;
+        } catch (error) {
+          if (attempt === retries) throw error;
+          // Don't retry on non-network errors (like 429 which we handled above)
+          if (error.message.includes('rate limit') || error.message.includes('429')) {
+            throw error;
+          }
+          const delay = baseDelay * Math.pow(2, attempt);
+          console.warn(`AssemblyAI request failed (attempt ${attempt + 1}/${retries}): ${error.message}. Retrying in ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    };
+
     try {
       // Combine all audio chunks into a single buffer
       // For AssemblyAI, we'd typically upload the combined audio file
@@ -144,8 +182,8 @@ class TranscriptionService {
       const tempFile = path.join('/tmp', `transcript_${session.id}_${Date.now()}.webm`);
       fs.writeFileSync(tempFile, audioBuffer);
 
-      // Upload to AssemblyAI
-      const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+      // Upload to AssemblyAI with retry logic
+      const uploadResponse = await fetchWithRetry('https://api.assemblyai.com/v2/upload', {
         method: 'POST',
         headers: {
           'Authorization': this.assemblyaiApiKey,
@@ -157,8 +195,8 @@ class TranscriptionService {
       const uploadData = await uploadResponse.json();
       const audioUrl = uploadData.upload_url;
 
-      // Request transcription
-      const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+      // Request transcription with retry logic
+      const transcriptResponse = await fetchWithRetry('https://api.assemblyai.com/v2/transcript', {
         method: 'POST',
         headers: {
           'Authorization': this.assemblyaiApiKey,
@@ -177,12 +215,12 @@ class TranscriptionService {
       const transcriptData = await transcriptResponse.json();
       const transcriptId = transcriptData.id;
 
-      // Poll for completion
+      // Poll for completion with retry logic
       let transcriptResult;
       for (let i = 0; i < 60; i++) { // Max 60 seconds
         await new Promise(r => setTimeout(r, 1000));
         
-        const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+        const pollResponse = await fetchWithRetry(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
           headers: { 'Authorization': this.assemblyaiApiKey }
         });
         
@@ -211,7 +249,11 @@ class TranscriptionService {
       };
 
     } catch (error) {
-      console.error('AssemblyAI transcription error:', error);
+      console.error('AssemblyAI transcription error:', {
+        message: error.message,
+        stack: error.stack,
+        sessionId: session.id
+      });
       // Fallback to mock for development
       return this._mockTranscription(session);
     }

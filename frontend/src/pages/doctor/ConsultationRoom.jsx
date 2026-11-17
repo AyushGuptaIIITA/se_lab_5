@@ -167,6 +167,7 @@ export default function ConsultationRoom() {
   const [mlPredictions, setMlPredictions] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [showMlPanel, setShowMlPanel] = useState(true);
+  const [mlError, setMlError] = useState(null);
 
   // ── Real-time Speech Recognition state (doctor only) ──────────────────────
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -735,7 +736,21 @@ export default function ConsultationRoom() {
       });
       setMlPredictions(res.data);
     } catch (err) {
-      console.warn('Auto ML prediction error:', err);
+      const status = err.response?.status;
+      const message = err.response?.data?.message || err.message;
+      const details = err.response?.data?.details;
+      
+      // Handle specific error cases
+      if (status === 429) {
+        console.warn('ML prediction rate limited (429):', message);
+        setMlError('AI service temporarily busy. Please try again in a moment.');
+      } else if (status === 500) {
+        console.error('ML prediction server error (500):', { message, details, speechText, notes });
+        setMlError('AI analysis unavailable. Using manual diagnosis only.');
+      } else {
+        console.warn('Auto ML prediction error:', { status, message, details });
+        setMlError('Could not load AI suggestions.');
+      }
     } finally {
       setMlLoading(false);
     }
@@ -1693,6 +1708,19 @@ export default function ConsultationRoom() {
                   <div className="p-6 text-center">
                     <Loader2 className="w-8 h-8 animate-spin text-purple-500 mx-auto mb-2" />
                     <p className="text-sm text-slate-600">Analyzing symptoms, clinical notes, and consultation transcript...</p>
+                  </div>
+                )}
+
+                {mlError && !mlLoading && (
+                  <div className="p-4 text-center space-y-2">
+                    <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+                    <p className="text-sm font-semibold text-amber-800">{mlError}</p>
+                    <button
+                      onClick={() => { setMlError(null); runMlPrediction(); }}
+                      className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center space-x-1 mx-auto"
+                    >
+                      <RefreshCw className="w-3 h-3" /><span>Retry Analysis</span>
+                    </button>
                   </div>
                 )}
 
