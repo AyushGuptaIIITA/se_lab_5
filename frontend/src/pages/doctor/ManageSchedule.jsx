@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { 
   Plus, Trash2, Save, Loader2, Calendar, Clock, ToggleLeft, ToggleRight, 
-  Check, CalendarDays, AlertTriangle, Sparkles, CheckCircle2
+  Check, CalendarDays, AlertTriangle, Sparkles, CheckCircle2, Ban,
+  ChevronRight, CalendarCheck, HelpCircle
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
 import AlertBanner from '../../components/AlertBanner';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
-
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 const DURATION_PRESETS = [
   { label: '15 Mins', minutes: 15 },
@@ -21,6 +20,36 @@ const DURATION_PRESETS = [
   { label: 'Custom', minutes: null },
 ];
 
+// Helper to get formatted date string (YYYY-MM-DD)
+function toDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// Get ISO day name from a date string (YYYY-MM-DD)
+function getDayName(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long' });
+}
+
+function formatDateDisplay(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function getDateRelativeLabel(dateStr) {
+  const todayStr = toDateStr(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = toDateStr(tomorrow);
+
+  if (dateStr === todayStr) return 'Today';
+  if (dateStr === tomorrowStr) return 'Tomorrow';
+  return null;
+}
+
 export default function ManageSchedule() {
   const { t } = useLanguage();
   const [slots, setSlots] = useState([]);
@@ -29,15 +58,38 @@ export default function ManageSchedule() {
   const [saving, setSaving] = useState(false);
   const [alert, setAlert] = useState(null);
 
-  // Mode: 'date' (Specific calendar date) vs 'weekly' (Recurring day)
-  const [scheduleMode, setScheduleMode] = useState('date');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedDay, setSelectedDay] = useState('Monday');
+  // Pure Date-Centric Scheduling
+  const todayStr = toDateStr(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayStr);
 
   // Time & Duration
   const [newStartTime, setNewStartTime] = useState('09:00');
   const [newEndTime, setNewEndTime] = useState('09:30');
   const [selectedPreset, setSelectedPreset] = useState(30); // 30 minutes default
+
+  // Deduplicate slots array by (date + startTime + endTime)
+  const deduplicateSlots = (rawSlots) => {
+    const seen = new Set();
+    const result = [];
+    for (const sl of rawSlots) {
+      const dateVal = sl.date || todayStr;
+      const start = sl.startTime || sl.start;
+      const end = sl.endTime || sl.end;
+      const key = `${dateVal}_${start}_${end}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          ...sl,
+          date: dateVal,
+          day: sl.day || getDayName(dateVal),
+          startTime: start,
+          endTime: end,
+          isActive: sl.isActive !== false
+        });
+      }
+    }
+    return result;
+  };
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -47,7 +99,8 @@ export default function ManageSchedule() {
           api.get('/auth/me'),
           api.get('/appointments?limit=50')
         ]);
-        setSlots(doctorRes.data.user.availableSlots || []);
+        const rawSlots = doctorRes.data.user.availableSlots || [];
+        setSlots(deduplicateSlots(rawSlots));
         setAppointments(apptRes.data.appointments || []);
       } catch {
         setAlert({ type: 'error', message: 'Failed to load schedule.' });
@@ -66,7 +119,6 @@ export default function ManageSchedule() {
     return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
   };
 
-  // When start time changes, update end time if a preset is active
   const handleStartTimeChange = (newStart) => {
     setNewStartTime(newStart);
     if (selectedPreset !== null) {
@@ -74,7 +126,6 @@ export default function ManageSchedule() {
     }
   };
 
-  // When a duration preset chip is clicked
   const handlePresetClick = (mins) => {
     setSelectedPreset(mins);
     if (mins !== null) {
@@ -82,43 +133,72 @@ export default function ManageSchedule() {
     }
   };
 
-  // Real-time validation
   const isTimeRangeValid = newStartTime && newEndTime && newStartTime < newEndTime;
 
+  // ── Exact Duplicate & Overlap Detection ──────────────────────────────────
+  const isDuplicate = () => {
+    return slots.some(sl => {
+      const slDate = sl.date || todayStr;
+      return slDate === selectedDate && sl.startTime === newStartTime && sl.endTime === newEndTime;
+    });
+  };
+
+  const findOverlap = () => {
+    return slots.find(sl => {
+      const slDate = sl.date || todayStr;
+      if (slDate !== selectedDate) return false;
+      // Overlap condition: start < otherEnd && end > otherStart
+      return newStartTime < sl.endTime && newEndTime > sl.startTime;
+    });
+  };
+
+  const duplicateExists = isTimeRangeValid && isDuplicate();
+  const overlapSlot = isTimeRangeValid && !duplicateExists ? findOverlap() : null;
+
   const addSlot = async () => {
+    if (!selectedDate) {
+      setAlert({ type: 'error', message: 'Please select a calendar date.' });
+      return;
+    }
     if (!newStartTime || !newEndTime) {
       setAlert({ type: 'error', message: 'Please specify both start time and end time.' });
       return;
     }
     if (newStartTime >= newEndTime) {
-      setAlert({ 
-        type: 'error', 
-        message: `Invalid Time Range: End time (${newEndTime}) cannot be earlier than or equal to start time (${newStartTime}).` 
+      setAlert({ type: 'error', message: 'Invalid Time Range: End time must be strictly after start time.' });
+      return;
+    }
+
+    // ── Prevent Duplicates ──
+    if (isDuplicate()) {
+      setAlert({
+        type: 'error',
+        message: `Duplicate slot: ${newStartTime}–${newEndTime} already exists for ${formatDateDisplay(selectedDate)}. Duplicate entries are blocked.`
       });
       return;
     }
 
     const newSlot = {
-      day: scheduleMode === 'weekly' ? selectedDay : 'Specific Date',
-      date: scheduleMode === 'date' ? selectedDate : null,
+      day: getDayName(selectedDate),
+      date: selectedDate,
       startTime: newStartTime,
       endTime: newEndTime,
       isActive: true
     };
 
-    const updated = [...slots, newSlot];
+    const updated = deduplicateSlots([...slots, newSlot]);
     setSlots(updated);
     setSaving(true);
     setAlert(null);
     try {
       const res = await api.put('/doctors/schedule', { availableSlots: updated });
       if (res.data?.doctor?.availableSlots) {
-        setSlots(res.data.doctor.availableSlots);
+        setSlots(deduplicateSlots(res.data.doctor.availableSlots));
       }
-      const label = scheduleMode === 'date' ? `Date: ${selectedDate}` : `${selectedDay}`;
-      setAlert({ type: 'success', message: `Added & saved slot for ${label} (${newStartTime} – ${newEndTime}).` });
+      setAlert({ type: 'success', message: `Slot added for ${formatDateDisplay(selectedDate)} (${newStartTime}–${newEndTime}).` });
     } catch (err) {
       setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to save slot.' });
+      setSlots(prev => prev.filter(s => s !== newSlot));
     } finally {
       setSaving(false);
     }
@@ -131,7 +211,19 @@ export default function ManageSchedule() {
       await api.put('/doctors/schedule', { availableSlots: updated });
       setAlert({ type: 'success', message: 'Slot deleted.' });
     } catch {
-      setAlert({ type: 'error', message: 'Failed to update schedule on server.' });
+      setAlert({ type: 'error', message: 'Failed to update schedule.' });
+    }
+  };
+
+  const removeAllSlotsForDate = async (dateStr) => {
+    if (!window.confirm(`Are you sure you want to delete all scheduled slots for ${formatDateDisplay(dateStr)}?`)) return;
+    const updated = slots.filter(s => (s.date || todayStr) !== dateStr);
+    setSlots(updated);
+    try {
+      await api.put('/doctors/schedule', { availableSlots: updated });
+      setAlert({ type: 'success', message: `All slots deleted for ${formatDateDisplay(dateStr)}.` });
+    } catch {
+      setAlert({ type: 'error', message: 'Failed to delete date slots.' });
     }
   };
 
@@ -140,7 +232,6 @@ export default function ManageSchedule() {
     setSlots(updated);
     try {
       await api.put('/doctors/schedule', { availableSlots: updated });
-      setAlert({ type: 'success', message: 'Slot availability updated.' });
     } catch {
       setAlert({ type: 'error', message: 'Failed to update slot status.' });
     }
@@ -151,21 +242,45 @@ export default function ManageSchedule() {
     setAlert(null);
     try {
       const res = await api.put('/doctors/schedule', { availableSlots: slots });
-      if (res.data?.doctor?.availableSlots) {
-        setSlots(res.data.doctor.availableSlots);
-      }
-      setAlert({ type: 'success', message: 'Schedule updated successfully!' });
+      if (res.data?.doctor?.availableSlots) setSlots(deduplicateSlots(res.data.doctor.availableSlots));
+      setAlert({ type: 'success', message: 'All date-wise schedule slots saved successfully!' });
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to save.' });
+      setAlert({ type: 'error', message: err.response?.data?.message || 'Failed to save schedule.' });
     } finally { setSaving(false); }
   };
 
-  const upcomingApts = appointments.filter(a => ['confirmed', 'pending', 'in-progress'].includes(a.status) && new Date(a.date) >= new Date());
-  
-  // Group slots
-  const specificDateSlots = slots.filter(s => s.date).sort((a, b) => a.date.localeCompare(b.date));
-  const uniqueDates = [...new Set(specificDateSlots.map(s => s.date))];
-  const byDay = DAYS.reduce((acc, d) => { acc[d] = slots.filter(s => !s.date && s.day === d); return acc; }, {});
+  const upcomingApts = appointments.filter(a =>
+    ['confirmed', 'pending', 'in-progress'].includes(a.status) && new Date(a.date) >= new Date()
+  );
+
+  // Group slots strictly date-wise, sorted chronologically
+  const groupedDates = {};
+  slots.forEach(slot => {
+    const d = slot.date || todayStr;
+    if (!groupedDates[d]) groupedDates[d] = [];
+    groupedDates[d].push(slot);
+  });
+
+  // Sort slots inside each date by start time
+  Object.keys(groupedDates).forEach(d => {
+    groupedDates[d].sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  });
+
+  // Sort dates chronologically
+  const sortedDates = Object.keys(groupedDates).sort((a, b) => a.localeCompare(b));
+
+  // Quick next 7 days list for instant 1-click date picking
+  const quickDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const dateStr = toDateStr(d);
+    return {
+      dateStr,
+      label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.toLocaleDateString('en-IN', { weekday: 'short' }),
+      dateNum: d.getDate(),
+      month: d.toLocaleDateString('en-IN', { month: 'short' })
+    };
+  });
 
   if (loading) {
     return (
@@ -179,17 +294,20 @@ export default function ManageSchedule() {
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-7xl mx-auto">
         {alert && <AlertBanner type={alert.type} message={alert.message} onDismiss={() => setAlert(null)} />}
 
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
           <div>
-            <h1 className="text-2xl font-black text-slate-900 flex items-center space-x-2">
-              <span>{t('manageSchedule')}</span>
-            </h1>
+            <div className="flex items-center space-x-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-100 text-blue-700">
+                Date-Wise Availability Management
+              </span>
+            </div>
+            <h1 className="text-2xl font-black text-slate-900 mt-1">{t('manageSchedule')}</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Customize availability by specific calendar date or weekly recurring days with automated preset duration calculations
+              Schedule consultation time slots strictly by calendar date. Duplicate slots are blocked in real-time.
             </p>
           </div>
           <button
@@ -197,90 +315,83 @@ export default function ManageSchedule() {
             disabled={saving}
             className="flex items-center space-x-1.5 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all disabled:opacity-50"
           >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>Save Schedule</span>
-              </>
-            )}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /><span>Saving...</span></>
+              : <><Save className="w-4 h-4" /><span>Save All Changes</span></>}
           </button>
         </div>
 
-        {/* Add Slot Form */}
+        {/* ── Add Slot Card ── */}
         <div className="glass-panel p-5 rounded-3xl bg-white shadow-card space-y-4 border border-blue-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
               <Plus className="w-4 h-4 text-blue-600" />
-              <span>Add Consultation Time Slot</span>
+              <span>Add Consultation Slot by Date</span>
             </h2>
+            <span className="text-[11px] text-slate-400 font-medium">
+              Selected: <strong className="text-blue-700">{formatDateDisplay(selectedDate)}</strong>
+            </span>
+          </div>
 
-            {/* Mode Switcher */}
-            <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setScheduleMode('date')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  scheduleMode === 'date'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Specific Calendar Date
-              </button>
-              <button
-                type="button"
-                onClick={() => setScheduleMode('weekly')}
-                className={`px-3 py-1.5 rounded-lg transition-all ${
-                  scheduleMode === 'weekly'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Weekly Recurring Day
-              </button>
+          {/* Quick Date Chips (Next 7 Days) */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+              1. Choose Calendar Date:
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+              {quickDays.map(q => {
+                const isSelected = selectedDate === q.dateStr;
+                const slotCount = (groupedDates[q.dateStr] || []).length;
+                return (
+                  <button
+                    key={q.dateStr}
+                    type="button"
+                    onClick={() => setSelectedDate(q.dateStr)}
+                    className={`p-2 rounded-2xl border text-center transition-all ${
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 scale-[1.02]'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-[10px] font-extrabold uppercase tracking-wide opacity-90">{q.label}</div>
+                    <div className="text-lg font-black leading-tight mt-0.5">{q.dateNum}</div>
+                    <div className="text-[10px] font-medium opacity-80">{q.month}</div>
+                    {slotCount > 0 && (
+                      <span className={`inline-block mt-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {slotCount} slot{slotCount > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            {/* Date / Day Picker */}
+          {/* Date Picker & Time Inputs */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2">
+            {/* Custom Date Picker */}
             <div>
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                {scheduleMode === 'date' ? 'Select Calendar Date' : 'Select Day of Week'} *
+                Custom Calendar Date *
               </label>
-              {scheduleMode === 'date' ? (
-                <input
-                  type="date"
-                  min={new Date().toISOString().split('T')[0]}
-                  value={selectedDate}
-                  onChange={e => setSelectedDate(e.target.value)}
-                  className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white font-semibold"
-                />
-              ) : (
-                <select
-                  value={selectedDay}
-                  onChange={e => setSelectedDay(e.target.value)}
-                  className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white font-semibold"
-                >
-                  {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              )}
+              <input
+                type="date"
+                min={todayStr}
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white font-semibold text-slate-800"
+              />
             </div>
 
             {/* Start Time */}
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                Start Time *
-              </label>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Start Time *</label>
               <input
                 type="time"
                 value={newStartTime}
                 onChange={e => handleStartTimeChange(e.target.value)}
-                className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white font-semibold"
+                className="glass-input w-full px-3 py-2 rounded-xl text-xs bg-white font-semibold text-slate-800"
               />
             </div>
 
@@ -289,7 +400,7 @@ export default function ManageSchedule() {
               <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
                 <span>End Time *</span>
                 {selectedPreset !== null && (
-                  <span className="text-[10px] text-blue-600 font-normal">Auto ({selectedPreset}m)</span>
+                  <span className="text-[10px] text-blue-600 font-bold">Auto ({selectedPreset}m)</span>
                 )}
               </label>
               <input
@@ -298,7 +409,7 @@ export default function ManageSchedule() {
                 disabled={selectedPreset !== null}
                 onChange={e => setNewEndTime(e.target.value)}
                 className={`glass-input w-full px-3 py-2 rounded-xl text-xs font-semibold ${
-                  selectedPreset !== null ? 'bg-slate-50 text-slate-700' : 'bg-white'
+                  selectedPreset !== null ? 'bg-slate-50 text-slate-700 cursor-not-allowed' : 'bg-white text-slate-800'
                 }`}
               />
             </div>
@@ -308,21 +419,30 @@ export default function ManageSchedule() {
               <button
                 type="button"
                 onClick={addSlot}
-                disabled={!isTimeRangeValid || saving}
-                className="w-full flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={!isTimeRangeValid || saving || duplicateExists}
+                className={`w-full flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all disabled:cursor-not-allowed ${
+                  duplicateExists
+                    ? 'bg-rose-100 text-rose-700 border border-rose-300 opacity-90'
+                    : !isTimeRangeValid
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'text-white bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'
+                }`}
               >
-                <Plus className="w-4 h-4" />
-                <span>
-                  {saving ? 'Saving...' : `Add Slot (${newStartTime} - ${newEndTime})`}
-                </span>
+                {duplicateExists ? (
+                  <><Ban className="w-4 h-4 flex-shrink-0" /><span>Slot Already Exists</span></>
+                ) : saving ? (
+                  <><Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /><span>Adding...</span></>
+                ) : (
+                  <><Plus className="w-4 h-4 flex-shrink-0" /><span>Add Slot ({newStartTime}–{newEndTime})</span></>
+                )}
               </button>
             </div>
           </div>
 
-          {/* Preset Duration Chips (User Requirement: 15m, 30m, 45m, 1h, 1.5h, 2h, Custom) */}
-          <div className="space-y-1.5 pt-2">
+          {/* Duration Preset Chips */}
+          <div className="space-y-1.5 pt-1">
             <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
-              Quick Duration Presets:
+              2. Quick Duration Presets:
             </span>
             <div className="flex flex-wrap gap-2">
               {DURATION_PRESETS.map(preset => {
@@ -345,163 +465,214 @@ export default function ManageSchedule() {
             </div>
           </div>
 
-          {/* Validation Feedback Warning */}
-          {!isTimeRangeValid && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center space-x-2 animate-fadeIn">
+          {/* Validation & Duplicate Warnings */}
+          {!isTimeRangeValid && newStartTime && newEndTime && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center space-x-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span><strong>Invalid Time Range:</strong> End time must be strictly after start time.</span>
+            </div>
+          )}
+
+          {duplicateExists && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-xs text-rose-900 flex items-start space-x-2.5 animate-in fade-in">
+              <Ban className="w-5 h-5 flex-shrink-0 text-rose-600 mt-0.5" />
+              <div>
+                <strong className="font-extrabold text-rose-800">Duplicate Slot Detected:</strong>{' '}
+                The time slot <strong>{newStartTime} – {newEndTime}</strong> is already added for{' '}
+                <strong>{formatDateDisplay(selectedDate)}</strong>. A doctor cannot add the same slot twice for the same date.
+              </div>
+            </div>
+          )}
+
+          {overlapSlot && (
+            <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600" />
               <span>
-                <strong>Invalid Time Range:</strong> End time ({newEndTime}) must be strictly after start time ({newStartTime}). Reverse ranges (e.g. 9:00 PM to 8:00 PM) are prohibited.
+                <strong>Notice:</strong> This slot overlaps with an existing slot ({overlapSlot.startTime} – {overlapSlot.endTime}) on this date.
               </span>
             </div>
           )}
         </div>
 
-        {/* Schedule Display */}
+        {/* ── Main Schedule View: Strictly Date-Wise ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            {/* Specific Calendar Date Slots */}
-            {uniqueDates.length > 0 && (
-              <div className="glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-slate-800 flex items-center space-x-1.5">
-                    <Calendar className="w-4 h-4 text-blue-600" />
-                    <span>Specific Calendar Date Availability ({specificDateSlots.length} slots)</span>
-                  </h2>
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-extrabold text-slate-900 flex items-center space-x-2">
+                <CalendarCheck className="w-5 h-5 text-blue-600" />
+                <span>Date-Wise Consultation Hours ({sortedDates.length} Dates, {slots.length} Total Slots)</span>
+              </h2>
+              <span className="text-xs text-slate-500 font-medium">Sorted chronologically</span>
+            </div>
+
+            {sortedDates.length === 0 ? (
+              <div className="glass-panel p-12 text-center rounded-3xl bg-white shadow-card border border-slate-200/80 space-y-3">
+                <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                  <Calendar className="w-8 h-8" />
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {uniqueDates.map(dateStr => {
-                    const dateSlots = specificDateSlots.filter(s => s.date === dateStr);
-                    const formatted = new Date(dateStr).toLocaleDateString('en-IN', {
-                      weekday: 'short',
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric'
-                    });
-                    return (
-                      <div key={dateStr} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="w-40 flex-shrink-0">
-                          <p className="text-xs font-bold text-slate-900">{formatted}</p>
-                          <span className="text-[10px] text-blue-600 font-semibold">{dateStr}</span>
+                <h3 className="text-base font-bold text-slate-800">No Consultation Slots Scheduled</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Select a calendar date from the top panel and click "+ Add Slot" to make yourself available for patient bookings.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {sortedDates.map(dateStr => {
+                  const dateSlots = groupedDates[dateStr];
+                  const dayName = getDayName(dateStr);
+                  const relLabel = getDateRelativeLabel(dateStr);
+                  const isSelected = selectedDate === dateStr;
+
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`glass-panel rounded-3xl overflow-hidden bg-white shadow-card border transition-all ${
+                        isSelected ? 'border-blue-400 ring-2 ring-blue-500/10' : 'border-slate-200/80 hover:border-slate-300'
+                      }`}
+                    >
+                      {/* Date Card Header */}
+                      <div className="p-4 bg-slate-50/80 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center space-x-3">
+                          {/* Calendar date badge */}
+                          <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex flex-col items-center justify-center font-bold flex-shrink-0 shadow-sm shadow-blue-500/20">
+                            <span className="text-[9px] uppercase tracking-wider opacity-90">{dayName.slice(0, 3)}</span>
+                            <span className="text-base font-black leading-none">{new Date(dateStr + 'T00:00:00').getDate()}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <h3 className="text-sm font-black text-slate-900">{formatDateDisplay(dateStr)}</h3>
+                              {relLabel && (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                                  relLabel === 'Today' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-blue-100 text-blue-800'
+                                }`}>
+                                  {relLabel}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {dateSlots.filter(s => s.isActive).length} active · {dateSlots.length} total consultation slot{dateSlots.length !== 1 ? 's' : ''}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 flex flex-wrap gap-2">
+
+                        {/* Quick action buttons for this date */}
+                        <div className="flex items-center space-x-2 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDate(dateStr)}
+                            className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors"
+                            title="Add another slot to this date"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add Slot</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeAllSlotsForDate(dateStr)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="Delete all slots for this date"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Slots Grid for this Date */}
+                      <div className="p-4">
+                        <div className="flex flex-wrap gap-2.5">
                           {dateSlots.map(sl => {
                             const originalIdx = slots.indexOf(sl);
                             return (
-                              <span
+                              <div
                                 key={originalIdx}
-                                className={`flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
+                                className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-2xl text-xs font-bold border transition-all ${
                                   sl.isActive
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
-                                    : 'bg-slate-100 text-slate-400 border-slate-200 line-through'
+                                    ? 'bg-blue-50 text-blue-900 border-blue-200 shadow-2xs'
+                                    : 'bg-slate-100 text-slate-400 border-slate-200 line-through opacity-60'
                                 }`}
                               >
-                                <Clock className="w-3.5 h-3.5" />
+                                <Clock className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
                                 <span>{sl.startTime} – {sl.endTime}</span>
+
                                 <button
+                                  type="button"
                                   onClick={() => toggleSlot(originalIdx)}
-                                  className="ml-1 text-slate-400 hover:text-blue-600"
-                                  title="Toggle active/inactive"
+                                  className="text-slate-400 hover:text-blue-700 transition-colors ml-1"
+                                  title={sl.isActive ? 'Deactivate this slot' : 'Activate this slot'}
                                 >
-                                  {sl.isActive ? <ToggleRight className="w-4 h-4 text-blue-600" /> : <ToggleLeft className="w-4 h-4" />}
+                                  {sl.isActive
+                                    ? <ToggleRight className="w-4 h-4 text-blue-600" />
+                                    : <ToggleLeft className="w-4 h-4 text-slate-400" />}
                                 </button>
+
                                 <button
+                                  type="button"
                                   onClick={() => removeSlot(originalIdx)}
-                                  className="ml-0.5 text-slate-300 hover:text-rose-500"
+                                  className="text-slate-300 hover:text-rose-600 transition-colors ml-0.5"
                                   title="Delete slot"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
-                              </span>
+                              </div>
                             );
                           })}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-
-            {/* Weekly Recurring Schedule Overview */}
-            <div className="glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
-              <div className="p-4 border-b border-slate-100 bg-slate-50/70">
-                <h2 className="text-sm font-bold text-slate-800 flex items-center space-x-1.5">
-                  <CalendarDays className="w-4 h-4 text-blue-600" />
-                  <span>Weekly Recurring Schedule Overview</span>
-                </h2>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {DAYS.map(day => (
-                  <div key={day} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider w-28">{day}</span>
-                    <div className="flex-1 flex flex-wrap gap-2">
-                      {byDay[day].length === 0 ? (
-                        <span className="text-xs text-slate-400 italic">No recurring slots</span>
-                      ) : (
-                        byDay[day].map((sl) => {
-                          const originalIdx = slots.indexOf(sl);
-                          return (
-                            <span
-                              key={originalIdx}
-                              className={`flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition-all ${
-                                sl.isActive
-                                  ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-xs'
-                                  : 'bg-slate-100 text-slate-400 border-slate-200 line-through'
-                              }`}
-                            >
-                              <Clock className="w-3.5 h-3.5" />
-                              <span>{sl.startTime} – {sl.endTime}</span>
-                              <button
-                                onClick={() => toggleSlot(originalIdx)}
-                                className="ml-1 text-slate-400 hover:text-blue-600"
-                                title="Toggle active/inactive"
-                              >
-                                {sl.isActive ? <ToggleRight className="w-4 h-4 text-blue-600" /> : <ToggleLeft className="w-4 h-4" />}
-                              </button>
-                              <button
-                                onClick={() => removeSlot(originalIdx)}
-                                className="ml-0.5 text-slate-300 hover:text-rose-500"
-                                title="Delete slot"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </span>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
 
-          {/* Upcoming Bookings Panel */}
-          <div className="glass-panel rounded-2xl overflow-hidden bg-white shadow-card">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/70">
-              <h2 className="text-sm font-bold text-slate-800">
-                {t('upcomingAppointments')} ({upcomingApts.length})
-              </h2>
-            </div>
-            {upcomingApts.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400">No upcoming consultations booked</div>
-            ) : (
-              <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-                {upcomingApts.map(apt => (
-                  <div key={apt._id} className="p-3.5 hover:bg-slate-50 transition-colors space-y-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-900">{apt.patient?.name}</p>
-                      <StatusBadge status={apt.status} />
-                    </div>
-                    <p className="text-[11px] text-slate-500 flex items-center space-x-1">
-                      <Calendar className="w-3 h-3 text-slate-400" />
-                      <span>{new Date(apt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                      <span className="font-semibold text-slate-700 ml-1">· {apt.timeSlot?.start}</span>
-                    </p>
-                  </div>
-                ))}
+          {/* ── Right Panel: Upcoming Booked Appointments ── */}
+          <div className="space-y-4">
+            <div className="glass-panel rounded-3xl overflow-hidden bg-white shadow-card border border-slate-200/80">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between">
+                <h2 className="text-sm font-extrabold text-slate-900 flex items-center space-x-1.5">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span>Upcoming Consultations ({upcomingApts.length})</span>
+                </h2>
               </div>
-            )}
+
+              {upcomingApts.length === 0 ? (
+                <div className="py-10 text-center text-xs text-slate-400 px-4">
+                  No upcoming patient consultations booked yet.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-[460px] overflow-y-auto">
+                  {upcomingApts.map(apt => (
+                    <div key={apt._id} className="p-3.5 hover:bg-slate-50 transition-colors space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-slate-900">{apt.patient?.name || 'Patient'}</p>
+                        <StatusBadge status={apt.status} />
+                      </div>
+                      <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+                        <span className="flex items-center space-x-1">
+                          <Calendar className="w-3 h-3 text-slate-400" />
+                          <span>{formatDateDisplay(toDateStr(new Date(apt.date)))}</span>
+                        </span>
+                        <span className="font-semibold text-slate-700">· {apt.timeSlot?.start} - {apt.timeSlot?.end}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Tips */}
+            <div className="p-4 rounded-3xl bg-blue-50/70 border border-blue-200/60 text-xs text-blue-900 space-y-2">
+              <div className="flex items-center space-x-1.5 font-bold text-blue-800">
+                <Sparkles className="w-4 h-4 text-blue-600" />
+                <span>Doctor Scheduling Rules</span>
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-[11px] text-blue-700/90">
+                <li>Availability is configured strictly by calendar date.</li>
+                <li>Adding duplicate slots for the same date & time is blocked.</li>
+                <li>Patients can only book active consultation slots.</li>
+                <li>You can toggle a slot active or inactive at any time.</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>

@@ -240,7 +240,18 @@ router.put('/schedule', auth, doctorOnly, async (req, res) => {
       return (a.startTime || '').localeCompare(b.startTime || '');
     });
 
-    doctor.availableSlots = cleanedSlots;
+    // Deduplicate slots: prevent any duplicate date/day + start + end slot combinations
+    const seenSlots = new Set();
+    const dedupedSlots = [];
+    for (const slot of cleanedSlots) {
+      const key = `${slot.date || slot.day}_${slot.startTime}_${slot.endTime}`;
+      if (!seenSlots.has(key)) {
+        seenSlots.add(key);
+        dedupedSlots.push(slot);
+      }
+    }
+
+    doctor.availableSlots = dedupedSlots;
     await doctor.save();
 
     const doctorObj = doctor.toObject();

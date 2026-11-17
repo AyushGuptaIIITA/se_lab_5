@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   FileText, Plus, Trash2, Send, Loader2, CheckCircle, Shield, 
   ArrowLeft, Pill, ShieldCheck, User, Calendar, Clock, AlertCircle,
-  Search, ShieldAlert, Sparkles, BookOpen, ExternalLink, Printer, Activity
+  Search, ShieldAlert, Sparkles, BookOpen, ExternalLink, Printer
 } from 'lucide-react';
 import Layout from '../../components/Layout';
 import StatusBadge from '../../components/StatusBadge';
@@ -14,10 +14,20 @@ import DailyPillSchedule from '../../components/DailyPillSchedule';
 import QRCodeBadge from '../../components/QRCodeBadge';
 import api from '../../services/api';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { formatAppointmentDate } from '../../utils/dateUtils';
 
 const FREQUENCIES = [
   'Once daily', 'Twice daily', 'Thrice daily', 'Every 4 hours', 
   'Every 6 hours', 'Every 8 hours', 'At bedtime', 'As needed'
+];
+
+const STATUS_FILTERS = [
+  { id: '', label: 'Recent' },
+  { id: 'incomplete', label: 'Incomplete' },
+  { id: 'in-progress', label: 'In progress' },
+  { id: 'confirmed', label: 'Confirmed' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'cancelled', label: 'Cancelled' }
 ];
 
 const emptyMed = { 
@@ -37,13 +47,18 @@ export default function PrescriptionForm() {
   const { t } = useLanguage();
 
   const [activeAptId, setActiveAptId] = useState(appointmentId && appointmentId !== 'new' ? appointmentId : '');
-  const [doctorAppointments, setDoctorAppointments] = useState([]);
   const [appointment, setAppointment] = useState(null);
+  const [patientQuery, setPatientQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [resultTotal, setResultTotal] = useState(0);
+  const [searchingPatients, setSearchingPatients] = useState(false);
+  const patientSearchTimeoutRef = useRef(null);
   const [existingPrescription, setExistingPrescription] = useState(null);
   const [diagnosis, setDiagnosis] = useState('');
   const [medications, setMedications] = useState([{ ...emptyMed }]);
   const [additionalNotes, setAdditionalNotes] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => Boolean(appointmentId && appointmentId !== 'new'));
   const [generating, setGenerating] = useState(false);
   const [sendingPharmacy, setSendingPharmacy] = useState(false);
   const [alert, setAlert] = useState(null);
@@ -58,7 +73,7 @@ export default function PrescriptionForm() {
   // E-Prescription Suite additions
   const [templates, setTemplates] = useState([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(null);
-  const [searchResults, setSearchResults] = useState([]);
+  const [drugResults, setDrugResults] = useState([]);
   const [searchingDrugs, setSearchingDrugs] = useState(false);
   const [interactions, setInteractions] = useState([]);
   const [checkingInteractions, setCheckingInteractions] = useState(false);
@@ -92,31 +107,40 @@ export default function PrescriptionForm() {
     }
   }, [location.state]);
 
-  // Load all doctor appointments & templates on mount
+  // Clinical templates only — consultations are searched, never bulk-loaded
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const [aptRes, tplRes] = await Promise.allSettled([
-          api.get('/appointments?limit=50'),
-          api.get('/prescriptions/templates')
-        ]);
-
-        if (aptRes.status === 'fulfilled') {
-          const list = aptRes.value.data.appointments || [];
-          setDoctorAppointments(list);
-          if (!activeAptId && list.length > 0) {
-            setActiveAptId(list[0]._id);
-          }
-        }
-        if (tplRes.status === 'fulfilled') {
-          setTemplates(tplRes.value.data.templates || []);
-        }
-      } catch (err) {
-        console.error('Failed to load initial e-prescription data:', err);
-      }
-    };
-    fetchInitialData();
+    api.get('/prescriptions/templates')
+      .then(res => setTemplates(res.data.templates || []))
+      .catch(err => console.error('Failed to load clinical templates:', err));
   }, []);
+
+  // Server-side patient search. Empty query returns only the latest visits.
+  useEffect(() => {
+    if (patientSearchTimeoutRef.current) clearTimeout(patientSearchTimeoutRef.current);
+
+    patientSearchTimeoutRef.current = setTimeout(async () => {
+      setSearchingPatients(true);
+      try {
+        const params = new URLSearchParams({ limit: '8', page: '1' });
+        const q = patientQuery.trim();
+        if (q) params.set('q', q);
+        if (statusFilter) params.set('status', statusFilter);
+        const res = await api.get(`/appointments?${params.toString()}`);
+        setSearchResults(res.data.appointments || []);
+        setResultTotal(res.data.total || 0);
+      } catch (err) {
+        console.error('Consultation search failed:', err);
+        setSearchResults([]);
+        setResultTotal(0);
+      } finally {
+        setSearchingPatients(false);
+      }
+    }, patientQuery.trim() ? 280 : 0);
+
+    return () => {
+      if (patientSearchTimeoutRef.current) clearTimeout(patientSearchTimeoutRef.current);
+    };
+  }, [patientQuery, statusFilter]);
 
   // Load specific appointment & existing prescription
   useEffect(() => {
@@ -127,6 +151,8 @@ export default function PrescriptionForm() {
 
     const fetchAppt = async () => {
       setLoading(true);
+      setAppointment(null);
+      setExistingPrescription(null);
       try {
         const res = await api.get(`/appointments/${activeAptId}`);
         const appt = res.data.appointment;
@@ -135,9 +161,11 @@ export default function PrescriptionForm() {
           setExistingPrescription(appt.prescription);
         } else {
           setExistingPrescription(null);
-          if (appt.symptoms) {
-            setAdditionalNotes(`Patient symptoms noted: ${appt.symptoms}`);
-          }
+          setDiagnosis('');
+          setMedications([{ ...emptyMed }]);
+          setInteractions([]);
+          setAiPredictions(null);
+          setAdditionalNotes(appt.symptoms ? `Patient symptoms noted: ${appt.symptoms}` : '');
           // Auto-run AI disease prediction when symptoms exist
           if (appt.symptoms) {
             setLoadingAI(true);
@@ -192,7 +220,7 @@ export default function PrescriptionForm() {
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
     if (!query || query.trim().length < 1) {
-      setSearchResults([]);
+      setDrugResults([]);
       return;
     }
 
@@ -200,7 +228,7 @@ export default function PrescriptionForm() {
       setSearchingDrugs(true);
       try {
         const res = await api.get(`/prescriptions/drugs/search?q=${encodeURIComponent(query)}`);
-        setSearchResults(res.data.drugs || []);
+        setDrugResults(res.data.drugs || []);
       } catch (err) {
         console.error('Drug search error:', err);
       } finally {
@@ -225,7 +253,7 @@ export default function PrescriptionForm() {
       };
     }));
     setActiveSearchIndex(null);
-    setSearchResults([]);
+    setDrugResults([]);
   };
 
   const applyTemplate = (tpl) => {
@@ -318,27 +346,16 @@ export default function PrescriptionForm() {
     }
   };
 
-  if (loading) {
-    return (
-      <Layout>
-        <div className="min-h-[50vh] flex flex-col items-center justify-center p-6 text-center">
-          <div className="relative w-16 h-16 mb-4 flex items-center justify-center">
-            <div className="absolute inset-0 rounded-full bg-blue-500/15 animate-ping opacity-60" />
-            <div className="absolute inset-0 rounded-full border-3 border-transparent border-t-blue-600 border-r-indigo-500 animate-spin" />
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30">
-              <Activity className="w-5 h-5 animate-pulse" />
-            </div>
-          </div>
-          <h2 className="text-base font-bold text-slate-900 tracking-tight">
-            Loading E-Prescription Suite
-          </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-sm">
-            Retrieving clinical consultation records and drug formulary...
-          </p>
-        </div>
-      </Layout>
-    );
-  }
+  const selectConsultation = (apt) => {
+    if (!apt?._id || apt._id === activeAptId) return;
+    setDiagnosis('');
+    setMedications([{ ...emptyMed }]);
+    setAdditionalNotes('');
+    setInteractions([]);
+    setAiPredictions(null);
+    setActiveAptId(apt._id);
+    navigate(`/doctor/prescription/${apt._id}`, { replace: true });
+  };
 
   return (
     <Layout>
@@ -385,41 +402,147 @@ export default function PrescriptionForm() {
           </div>
         </div>
 
-        {/* Patient / Appointment Selector Dropdown */}
-        <div className="glass-panel p-4 rounded-2xl bg-white shadow-card space-y-2 border border-blue-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        {/* Search-first consultation picker — never dumps the full patient list */}
+        <div className="glass-panel p-4 sm:p-5 rounded-2xl bg-white shadow-card space-y-3 border border-blue-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
               <User className="w-4 h-4 text-blue-600" />
-              <span>Select Consultation / Patient Record</span>
+              <span>Find consultation</span>
             </label>
-            {appointment && (
-              <span className="text-xs text-slate-500">
-                Patient: <strong className="text-slate-900">{appointment.patient?.name}</strong> · Status: <strong className="capitalize text-slate-800">{appointment.status}</strong>
-              </span>
+            <span className="text-[11px] text-slate-400">
+              Search by patient name, phone, or email
+            </span>
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="search"
+              value={patientQuery}
+              onChange={e => setPatientQuery(e.target.value)}
+              placeholder="Type a name, phone number, or email…"
+              className="glass-input w-full pl-10 pr-10 py-3 rounded-xl text-sm bg-white font-medium text-slate-800"
+              autoComplete="off"
+            />
+            {searchingPatients && (
+              <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-600 animate-spin" />
             )}
           </div>
-          <select
-            value={activeAptId}
-            onChange={e => {
-              setActiveAptId(e.target.value);
-              navigate(`/doctor/prescription/${e.target.value}`, { replace: true });
-            }}
-            className="glass-input w-full p-2.5 rounded-xl text-xs bg-white font-semibold text-slate-800"
-          >
-            {doctorAppointments.length === 0 ? (
-              <option value="">No appointments found</option>
+
+          <div className="flex flex-wrap gap-1.5">
+            {STATUS_FILTERS.map(filter => {
+              const active = statusFilter === filter.id;
+              return (
+                <button
+                  key={filter.id || 'recent'}
+                  type="button"
+                  onClick={() => setStatusFilter(filter.id)}
+                  className={`px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:text-blue-700'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {appointment && (
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-blue-50 border border-blue-100 px-3.5 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Open chart</p>
+                <p className="text-sm font-bold text-slate-900 truncate">{appointment.patient?.name || 'Patient'}</p>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {formatAppointmentDate(appointment.date)} · {appointment.timeSlot?.start}–{appointment.timeSlot?.end}
+                  {appointment.patient?.phone ? ` · ${appointment.patient.phone}` : ''}
+                </p>
+              </div>
+              <StatusBadge status={appointment.status} />
+            </div>
+          )}
+
+          <div className="rounded-xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+            {searchResults.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <Search className="w-6 h-6 mx-auto text-slate-300 mb-2" />
+                <p className="text-sm font-bold text-slate-700">
+                  {patientQuery.trim() ? 'No matching consultations' : 'No consultations yet'}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {patientQuery.trim()
+                    ? 'Try another spelling, phone number, or status.'
+                    : 'Patients appear here after they book a visit with you.'}
+                </p>
+              </div>
             ) : (
-              doctorAppointments.map(apt => (
-                <option key={apt._id} value={apt._id}>
-                  {apt.patient?.name || 'Patient'} — {new Date(apt.date).toLocaleDateString('en-IN')} ({apt.timeSlot?.start} - {apt.timeSlot?.end}) [{apt.status.toUpperCase()}]
-                </option>
-              ))
+              searchResults.map(apt => {
+                const selected = apt._id === activeAptId;
+                const initial = (apt.patient?.name || 'P').trim().charAt(0).toUpperCase();
+                return (
+                  <button
+                    key={apt._id}
+                    type="button"
+                    onClick={() => selectConsultation(apt)}
+                    className={`w-full text-left px-3.5 py-3 flex items-center gap-3 transition-colors ${
+                      selected ? 'bg-blue-50' : 'bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0 ${
+                      selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {initial}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-900 truncate">{apt.patient?.name || 'Patient'}</p>
+                        {apt.prescription && (
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0">
+                            Rx issued
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 truncate mt-0.5">
+                        {[apt.patient?.phone, apt.patient?.email].filter(Boolean).join(' · ') || 'No contact on file'}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                        <Calendar className="w-3 h-3" />
+                        <span>{formatAppointmentDate(apt.date, { showWeekday: true })}</span>
+                        <Clock className="w-3 h-3 ml-1" />
+                        <span>{apt.timeSlot?.start}–{apt.timeSlot?.end}</span>
+                      </p>
+                    </div>
+                    <StatusBadge status={apt.status} />
+                  </button>
+                );
+              })
             )}
-          </select>
+          </div>
+
+          <p className="text-[11px] text-slate-400">
+            {patientQuery.trim()
+              ? `Showing ${searchResults.length} of ${resultTotal} match${resultTotal === 1 ? '' : 'es'}. Keep typing to narrow the list.`
+              : `Showing the ${searchResults.length} most recent consultation${searchResults.length === 1 ? '' : 's'}${resultTotal > searchResults.length ? ` of ${resultTotal}` : ''}. Search to find anyone else.`}
+          </p>
         </div>
 
         {/* Existing / Signed Prescription View */}
-        {existingPrescription ? (
+        {loading ? (
+          <div className="glass-panel rounded-2xl bg-white border border-slate-200 py-14 flex flex-col items-center text-center">
+            <Loader2 className="w-7 h-7 animate-spin text-blue-600 mb-3" />
+            <p className="text-sm font-bold text-slate-800">Opening consultation record</p>
+            <p className="text-xs text-slate-400 mt-1">Loading the chart for this visit.</p>
+          </div>
+        ) : !appointment ? (
+          <div className="glass-panel rounded-2xl bg-white border border-dashed border-slate-300 py-14 px-6 text-center">
+            <FileText className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+            <p className="text-sm font-bold text-slate-800">Choose a consultation to prescribe</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              Search for the patient above. You do not need to scroll through every visit.
+            </p>
+          </div>
+        ) : existingPrescription ? (
           <div className="space-y-4">
             <div className="glass-panel p-6 sm:p-8 rounded-3xl bg-white shadow-card space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
@@ -741,7 +864,7 @@ export default function PrescriptionForm() {
                       />
 
                       {/* Dropdown Results */}
-                      {activeSearchIndex === idx && (searchResults.length > 0 || searchingDrugs) && (
+                      {activeSearchIndex === idx && (drugResults.length > 0 || searchingDrugs) && (
                         <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white rounded-2xl shadow-xl border border-slate-200 max-h-56 overflow-y-auto divide-y divide-slate-100">
                           {searchingDrugs && (
                             <div className="p-3 text-xs text-slate-400 flex items-center space-x-2">
@@ -749,7 +872,7 @@ export default function PrescriptionForm() {
                               <span>Searching FDA & Clinical Database...</span>
                             </div>
                           )}
-                          {searchResults.map((drug, dIdx) => (
+                          {drugResults.map((drug, dIdx) => (
                             <button
                               key={dIdx}
                               type="button"

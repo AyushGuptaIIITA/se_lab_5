@@ -136,7 +136,7 @@ router.post('/', auth, patientOnly, async (req, res) => {
 // GET /api/appointments — Get user's appointments
 router.get('/', auth, async (req, res) => {
   try {
-    const { status, page = 1, limit = 10, from, to } = req.query;
+    const { status, page = 1, limit = 10, from, to, q } = req.query;
     const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
 
@@ -158,6 +158,19 @@ router.get('/', auth, async (req, res) => {
       filter.date = {};
       if (from) filter.date.$gte = new Date(from);
       if (to) filter.date.$lte = new Date(to);
+    }
+
+    // Name / phone / email search — lookup matching patients first so this
+    // stays usable when a doctor has a very large appointment history.
+    const queryText = (q || '').trim();
+    if (queryText && req.user.role !== 'patient') {
+      const escaped = queryText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      const matched = await User.find({
+        role: 'patient',
+        $or: [{ name: regex }, { phone: regex }, { email: regex }]
+      }).select('_id').sort({ name: 1 }).limit(40).lean();
+      filter.patient = { $in: matched.map((p) => p._id) };
     }
 
     const total = await Appointment.countDocuments(filter);
