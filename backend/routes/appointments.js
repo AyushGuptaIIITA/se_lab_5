@@ -197,11 +197,15 @@ router.get('/', auth, async (req, res) => {
 // GET /api/appointments/:id — Get single appointment
 router.get('/:id', auth, async (req, res) => {
   try {
+    console.log('[GET /appointments/:id] Fetching appointment:', req.params.id, 'for user:', req.user._id, 'role:', req.user.role);
+    
     const appointment = await Appointment.findById(req.params.id)
       .populate('patient', 'name email phone gender dateOfBirth bloodGroup address emergencyContact profileImage')
       .populate('doctor', 'name email specialization consultationFee bio licenseNumber profileImage')
       .populate('prescription')
       .populate('consultationSession');
+
+    console.log('[GET /appointments/:id] Appointment found:', !!appointment, appointment ? { status: appointment.status, hasConsultationSession: !!appointment.consultationSession, hasPrescription: !!appointment.prescription } : null);
 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found.' });
@@ -219,8 +223,21 @@ router.get('/:id', auth, async (req, res) => {
 
     res.json({ appointment });
   } catch (err) {
-    console.error('Get appointment error:', err);
-    res.status(500).json({ message: 'Server error fetching appointment.' });
+    console.error('[GET /appointments/:id] Error fetching appointment:', {
+      appointmentId: req.params.id,
+      userId: req.user._id,
+      userRole: req.user.role,
+      message: err.message,
+      stack: err.stack,
+      name: err.name
+    });
+    
+    // Return more specific error
+    if (err.name === 'MongoNetworkError' || err.name === 'MongoTimeoutError') {
+      return res.status(503).json({ message: 'Database temporarily unavailable. Please try again.', retry: true });
+    }
+    
+    res.status(500).json({ message: 'Server error fetching appointment.', details: err.message });
   }
 });
 
@@ -233,9 +250,13 @@ router.patch('/:id/status', auth, async (req, res) => {
       return res.status(400).json({ message: 'Status is required.' });
     }
 
+    console.log('[PATCH /appointments/:id/status] Updating appointment:', req.params.id, 'to status:', status, 'by user:', req.user._id, 'role:', req.user.role);
+    
     const appointment = await Appointment.findById(req.params.id)
       .populate('patient', 'name email')
       .populate('doctor', 'name email');
+
+    console.log('[PATCH /appointments/:id/status] Appointment found:', !!appointment, appointment ? { currentStatus: appointment.status, patient: appointment.patient?._id, doctor: appointment.doctor?._id } : null);
 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found.' });
@@ -301,6 +322,14 @@ router.patch('/:id/status', auth, async (req, res) => {
       .populate('prescription')
       .populate('consultationSession');
 
+    console.log('[PATCH /appointments/:id/status] Updated appointment fetched:', {
+      appointmentId: updatedAppointment._id,
+      status: updatedAppointment.status,
+      hasConsultationSession: !!updatedAppointment.consultationSession,
+      hasPrescription: !!updatedAppointment.prescription,
+      consultationSessionStatus: updatedAppointment.consultationSession?.status
+    });
+
     res.json({
       message: `Appointment ${status} successfully.`,
       appointment: updatedAppointment
@@ -324,8 +353,22 @@ router.patch('/:id/status', auth, async (req, res) => {
       });
     }
   } catch (err) {
-    console.error('Update appointment status error:', err);
-    res.status(500).json({ message: 'Server error updating appointment status.' });
+    console.error('[PATCH /appointments/:id/status] Error updating appointment status:', {
+      appointmentId: req.params.id,
+      requestedStatus: status,
+      userId: req.user._id,
+      userRole: req.user.role,
+      message: err.message,
+      stack: err.stack,
+      name: err.name
+    });
+    
+    // Return more specific error
+    if (err.name === 'MongoNetworkError' || err.name === 'MongoTimeoutError') {
+      return res.status(503).json({ message: 'Database temporarily unavailable. Please try again.', retry: true });
+    }
+    
+    res.status(500).json({ message: 'Server error updating appointment status.', details: err.message });
   }
 });
 

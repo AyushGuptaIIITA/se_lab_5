@@ -149,7 +149,7 @@ export default function PrescriptionForm() {
       return;
     }
 
-    const fetchAppt = async () => {
+    const fetchAppt = async (retryCount = 0) => {
       setLoading(true);
       setAppointment(null);
       setExistingPrescription(null);
@@ -180,16 +180,29 @@ export default function PrescriptionForm() {
           }
         }
       } catch (err) {
+        const status = err.response?.status;
+        const message = err.response?.data?.message || err.message;
+        const retryable = err.response?.data?.retry === true || status === 503;
+        
         console.error('Failed to load appointment for prescription:', {
           activeAptId,
-          status: err.response?.status,
-          message: err.response?.data?.message,
+          status,
+          message,
           data: err.response?.data,
-          stack: err.stack
+          stack: err.stack,
+          retryCount
         });
+        
+        // Retry on 503 (database temporarily unavailable) up to 2 times
+        if (retryable && retryCount < 2) {
+          console.log(`Retrying appointment fetch (attempt ${retryCount + 1}/2)...`);
+          setTimeout(() => fetchAppt(retryCount + 1), 1000 * (retryCount + 1));
+          return;
+        }
+        
         setAlert({
           type: 'error',
-          message: err.response?.data?.message || `Failed to load consultation details: ${err.message}`
+          message: message || `Failed to load consultation details: ${err.message}`
         });
       } finally {
         setLoading(false);
