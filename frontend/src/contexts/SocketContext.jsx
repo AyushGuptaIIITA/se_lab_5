@@ -24,6 +24,12 @@ export function SocketProvider({ children }) {
   const socketRef = useRef(null);
   const [connected, setConnected] = useState(false);
   const listenersRef = useRef([]); // [{ event, handler }]
+  const appointmentRoomsRef = useRef(new Set()); // survive reconnects so WebRTC signaling keeps working
+  const userIdRef = useRef(null);
+
+  useEffect(() => {
+    userIdRef.current = user?._id ? user._id.toString() : null;
+  }, [user?._id]);
 
   useEffect(() => {
     const url = getSocketURL();
@@ -38,9 +44,13 @@ export function SocketProvider({ children }) {
 
     socket.on('connect', () => {
       setConnected(true);
-      if (user?._id) {
-        socket.emit('join:user', user._id.toString());
+      if (userIdRef.current) {
+        socket.emit('join:user', userIdRef.current);
       }
+      // Re-join all appointment rooms after reconnect (critical for live video)
+      appointmentRoomsRef.current.forEach((apptId) => {
+        socket.emit('join:appointment', apptId);
+      });
       // Re-attach all registered listeners
       listenersRef.current.forEach(({ event, handler }) => {
         socket.off(event, handler);
@@ -49,7 +59,7 @@ export function SocketProvider({ children }) {
     });
 
     socket.on('disconnect', () => setConnected(false));
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', () => {
       setConnected(false);
     });
 
@@ -71,8 +81,11 @@ export function SocketProvider({ children }) {
    * Join an appointment-specific room
    */
   const joinAppointmentRoom = useCallback((appointmentId) => {
-    if (socketRef.current && appointmentId) {
-      socketRef.current.emit('join:appointment', appointmentId.toString());
+    if (!appointmentId) return;
+    const id = appointmentId.toString();
+    appointmentRoomsRef.current.add(id);
+    if (socketRef.current) {
+      socketRef.current.emit('join:appointment', id);
     }
   }, []);
 

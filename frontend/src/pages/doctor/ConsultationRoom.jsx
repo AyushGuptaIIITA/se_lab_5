@@ -16,6 +16,103 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
 import { useSocket } from '../../contexts/SocketContext';
 
+// ── Virtual Media Generators for Seamless Multi-Client & Hardware In-Use Fallbacks ──
+// When physical camera is locked by another window/tab on Windows ("Could not start video source"),
+// this creates a high-definition simulated clinical live feed with user initials, pulsing avatar & audio wave.
+const createVirtualVideoTrack = (name = 'User', role = 'doctor') => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 480;
+  const ctx = canvas.getContext('2d');
+  
+  let frame = 0;
+  const draw = () => {
+    frame++;
+    // Dark medical background
+    const grad = ctx.createLinearGradient(0, 0, 640, 480);
+    grad.addColorStop(0, '#090d16');
+    grad.addColorStop(1, '#131d2e');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 640, 480);
+
+    // Subtle pulsing ring
+    const radius = 68 + Math.sin(frame * 0.08) * 8;
+    ctx.beginPath();
+    ctx.arc(320, 195, radius + 10, 0, Math.PI * 2);
+    ctx.strokeStyle = role === 'doctor' ? 'rgba(59, 130, 246, 0.25)' : 'rgba(16, 185, 129, 0.25)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    // Solid avatar circle
+    ctx.beginPath();
+    ctx.arc(320, 195, 65, 0, Math.PI * 2);
+    ctx.fillStyle = role === 'doctor' ? '#2563eb' : '#059669';
+    ctx.fill();
+
+    // Initial
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const initial = (name || 'U').replace(/^Dr\.\s*/i, '').charAt(0).toUpperCase() || 'U';
+    ctx.fillText(initial, 320, 195);
+
+    // Display Name
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(name || (role === 'doctor' ? 'Doctor' : 'Patient'), 320, 295);
+
+    // Role Badge
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillStyle = role === 'doctor' ? '#60a5fa' : '#34d399';
+    ctx.fillText(
+      role === 'doctor' ? '● DOCTOR CLINICAL STREAM (VIRTUAL FEED)' : '● PATIENT LIVE STREAM (VIRTUAL FEED)',
+      320,
+      325
+    );
+
+    // Animated active waveform
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let x = 200; x <= 440; x += 10) {
+      const y = 375 + Math.sin((x + frame * 5) * 0.08) * 7;
+      if (x === 200) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  };
+
+  draw();
+  const timer = setInterval(draw, 100);
+  const stream = canvas.captureStream(15);
+  const track = stream.getVideoTracks()[0];
+  const origStop = track.stop.bind(track);
+  track.stop = () => {
+    clearInterval(timer);
+    origStop();
+  };
+  return track;
+};
+
+// Creates a silent audio track when microphone is blocked/busy
+const createSilentAudioTrack = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const dest = ctx.createMediaStreamDestination();
+    gain.gain.value = 0; // truly silent — still negotiates an audio m-line
+    osc.connect(gain);
+    gain.connect(dest);
+    osc.start();
+    return dest.stream.getAudioTracks()[0] || null;
+  } catch (e) {}
+  return null;
+};
+
 export default function ConsultationRoom() {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
@@ -50,7 +147,12 @@ export default function ConsultationRoom() {
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
-  const iceQueueRef = useRef([]);
+  const pendingSignalsRef = useRef([]);       // signals that arrived before PC existed
+  const processedSignalKeysRef = useRef(new Set());
+  const makingOfferRef = useRef(false);
+  const callGenerationRef = useRef(0);        // invalidate in-flight startNativeCall
+  const lastSignalPollAtRef = useRef(null);
+  const [localStreamVersion, setLocalStreamVersion] = useState(0); // re-attach <video> after render
   const [activeTab, setActiveTab] = useState('chat');
 
   // Chat state
@@ -84,6 +186,64 @@ export default function ConsultationRoom() {
   useEffect(() => { sessionRef.current = session; }, [session]);
 
   // ─── Native WebRTC Video Engine (Unlimited Session Duration - up to 1+ hour) ───
+  const signalKey = useCallback((sig) => {
+    if (!sig?.type) return '';
+    if (sig.type === 'offer' || sig.type === 'answer') {
+      return `${sig.type}:${sig.data?.type || ''}:${(sig.data?.sdp || '').slice(0, 120)}`;
+    }
+    if (sig.type === 'candidate') {
+      return `candidate:${sig.data?.candidate || ''}:${sig.data?.sdpMid ?? ''}:${sig.data?.sdpMLineIndex ?? ''}`;
+    }
+    return `${sig.type}:${JSON.stringify(sig.data || {}).slice(0, 80)}`;
+  }, []);
+
+  const attachLocalPreview = useCallback((stream) => {
+    if (!stream) return;
+    const el = localVideoRef.current;
+    if (el) {
+      if (el.srcObject !== stream) el.srcObject = stream;
+      el.muted = true;
+      el.play?.().catch(() => {});
+    }
+  }, []);
+
+  const attachRemoteTrack = useCallback((event) => {
+    const el = remoteVideoRef.current;
+    if (!el) return;
+
+    const remoteStream = event.streams?.[0];
+    if (remoteStream) {
+      if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
+    } else if (event.track) {
+      let media = el.srcObject;
+      if (!(media instanceof MediaStream)) {
+        media = new MediaStream();
+        el.srcObject = media;
+      }
+      if (!media.getTracks().some((t) => t.id === event.track.id)) {
+        media.addTrack(event.track);
+      }
+    }
+
+    el.play?.().catch(() => {});
+    setPeerConnected(true);
+  }, []);
+
+  const drainQueuedCandidates = useCallback(async (pc) => {
+    const remaining = [];
+    while (pendingSignalsRef.current.length > 0) {
+      const queued = pendingSignalsRef.current.shift();
+      if (queued?.type === 'candidate' && queued.data) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(queued.data));
+        } catch {}
+      } else if (queued) {
+        remaining.push(queued);
+      }
+    }
+    pendingSignalsRef.current = remaining;
+  }, []);
+
   const sendSignal = useCallback(async (sig) => {
     emit('webrtc:signal', {
       appointmentId,
@@ -102,12 +262,42 @@ export default function ConsultationRoom() {
     }
   }, [appointmentId, isDoctor, emit]);
 
-  const handleIncomingSignal = useCallback(async (sig) => {
-    if (!sig) return;
+  const createDoctorOffer = useCallback(async (reason = 'start') => {
+    const pc = peerConnectionRef.current;
+    if (!isDoctor || !pc || makingOfferRef.current) return;
+    // Don't renegotiate a healthy live call unless reconnect was requested
+    if (reason !== 'reconnect' && pc.connectionState === 'connected' && pc.iceConnectionState === 'connected') {
+      return;
+    }
+    // Only create/replace offer from stable or an unanswered local offer
+    if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') return;
 
-    // If we receive an offer but PC isn't set up yet, queue it
+    makingOfferRef.current = true;
+    try {
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+        iceRestart: reason === 'reconnect' || pc.iceConnectionState === 'failed'
+      });
+      if (!peerConnectionRef.current || peerConnectionRef.current !== pc) return;
+      await pc.setLocalDescription(offer);
+      sendSignal({ type: 'offer', data: pc.localDescription || offer });
+    } catch (err) {
+      console.warn('Doctor offer failed:', reason, err);
+    } finally {
+      makingOfferRef.current = false;
+    }
+  }, [isDoctor, sendSignal]);
+
+  const handleIncomingSignal = useCallback(async (sig) => {
+    if (!sig?.type) return;
+
+    const key = signalKey(sig);
+    if (key && processedSignalKeysRef.current.has(key)) return;
+
+    // Queue until peer connection exists (do NOT drop — early offers were being lost)
     if (!peerConnectionRef.current) {
-      iceQueueRef.current.push(sig);
+      pendingSignalsRef.current.push(sig);
       return;
     }
 
@@ -115,45 +305,52 @@ export default function ConsultationRoom() {
 
     try {
       if (sig.type === 'offer' && !isDoctor) {
-        // Patient handles offer: set remote, drain ice queue, create answer
-        if (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-          // Drain queued ICE candidates now that remote desc is set
-          while (iceQueueRef.current.length > 0) {
-            const queued = iceQueueRef.current.shift();
-            if (queued?.type === 'candidate' && queued.data) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(queued.data)); } catch {}
-            }
-          }
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          sendSignal({ type: 'answer', data: answer });
+        // Patient is the polite answerer only
+        if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-remote-offer') {
+          pendingSignalsRef.current.push(sig);
+          return;
         }
+        // Skip identical remote SDP
+        if (pc.currentRemoteDescription?.sdp && sig.data?.sdp === pc.currentRemoteDescription.sdp) {
+          if (key) processedSignalKeysRef.current.add(key);
+          return;
+        }
+
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+        if (key) processedSignalKeysRef.current.add(key);
+        await drainQueuedCandidates(pc);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendSignal({ type: 'answer', data: pc.localDescription || answer });
       } else if (sig.type === 'answer' && isDoctor) {
-        if (pc.signalingState === 'have-local-offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-          // Drain queued ICE candidates
-          while (iceQueueRef.current.length > 0) {
-            const queued = iceQueueRef.current.shift();
-            if (queued?.type === 'candidate' && queued.data) {
-              try { await pc.addIceCandidate(new RTCIceCandidate(queued.data)); } catch {}
-            }
-          }
+        if (pc.signalingState !== 'have-local-offer') return;
+        if (pc.currentRemoteDescription?.sdp && sig.data?.sdp === pc.currentRemoteDescription.sdp) {
+          if (key) processedSignalKeysRef.current.add(key);
+          return;
         }
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+        if (key) processedSignalKeysRef.current.add(key);
+        await drainQueuedCandidates(pc);
       } else if (sig.type === 'candidate' && sig.data) {
         if (pc.remoteDescription && pc.remoteDescription.type) {
-          try { await pc.addIceCandidate(new RTCIceCandidate(sig.data)); } catch {}
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(sig.data));
+            if (key) processedSignalKeysRef.current.add(key);
+          } catch {}
         } else {
-          // Buffer until remote description is set
-          iceQueueRef.current.push(sig);
+          pendingSignalsRef.current.push(sig);
         }
       }
     } catch (err) {
       console.warn('WebRTC signal handling warning:', err);
     }
-  }, [isDoctor, sendSignal]);
+  }, [isDoctor, sendSignal, signalKey, drainQueuedCandidates]);
 
   const stopNativeCall = useCallback(() => {
+    callGenerationRef.current += 1;
+    makingOfferRef.current = false;
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
@@ -168,19 +365,93 @@ export default function ConsultationRoom() {
     setIsScreenSharing(false);
   }, []);
 
-  const startNativeCall = useCallback(async () => {
-    try {
-      stopNativeCall();
-      iceQueueRef.current = []; // clear signal queue on fresh start
+  const acquireLocalMedia = useCallback(async () => {
+    const myName = user?.name || (isDoctor ? 'Doctor' : 'Patient');
+    const role = isDoctor ? 'doctor' : 'patient';
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
+    // Prefer real camera+mic; fall back gracefully so WebRTC always starts
+    try {
+      return {
+        stream: await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        }),
+        virtual: false
+      };
+    } catch (mediaErr) {
+      console.warn('Camera/mic unavailable, using fallback media:', mediaErr);
+    }
+
+    let audioTrack = null;
+    try {
+      const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
+      audioTrack = audioStream.getAudioTracks()[0] || null;
+    } catch {
+      audioTrack = createSilentAudioTrack();
+    }
+
+    let videoTrack = null;
+    try {
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      videoTrack = videoStream.getVideoTracks()[0] || null;
+    } catch {
+      videoTrack = createVirtualVideoTrack(myName, role);
+    }
+
+    if (!videoTrack) videoTrack = createVirtualVideoTrack(myName, role);
+
+    const tracks = [videoTrack];
+    if (audioTrack) tracks.push(audioTrack);
+
+    return { stream: new MediaStream(tracks), virtual: true };
+  }, [user?.name, isDoctor]);
+
+  const startNativeCall = useCallback(async () => {
+    const generation = ++callGenerationRef.current;
+
+    try {
+      // Preserve early offer/answer signals that arrived before this start
+      const preservedSignals = pendingSignalsRef.current.filter(
+        (s) => s?.type === 'offer' || s?.type === 'answer' || s?.type === 'candidate'
+      );
+
+      // Tear down previous PC/tracks without bumping generation again
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      if (peerConnectionRef.current) {
+        try { peerConnectionRef.current.close(); } catch {}
+        peerConnectionRef.current = null;
+      }
+      if (localVideoRef.current) localVideoRef.current.srcObject = null;
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      setPeerConnected(false);
+      setIsScreenSharing(false);
+      makingOfferRef.current = false;
+      processedSignalKeysRef.current = new Set();
+      pendingSignalsRef.current = preservedSignals;
+      lastSignalPollAtRef.current = null;
+
+      const { stream, virtual } = await acquireLocalMedia();
+      if (generation !== callGenerationRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
 
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+      setLocalStreamVersion((v) => v + 1);
+      attachLocalPreview(stream);
+
+      if (virtual) {
+        setAlert({
+          type: 'info',
+          message: 'Camera busy or unavailable in this browser. Using TeleMed Virtual Live Feed so both participants can still connect.'
+        });
       }
 
       const pc = new RTCPeerConnection({
@@ -188,80 +459,110 @@ export default function ConsultationRoom() {
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
           { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' }
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun.cloudflare.com:3478' }
         ]
       });
+
+      if (generation !== callGenerationRef.current) {
+        pc.close();
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
       peerConnectionRef.current = pc;
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // Add local media tracks
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      pc.ontrack = (event) => attachRemoteTrack(event);
 
-      // Handle remote incoming stream — this fires when the peer's tracks arrive
-      pc.ontrack = (event) => {
-        const remoteStream = event.streams?.[0];
-        if (remoteStream && remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-        setPeerConnected(true);
-      };
-
-      // ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          sendSignal({ type: 'candidate', data: event.candidate });
+          sendSignal({ type: 'candidate', data: event.candidate.toJSON?.() || event.candidate });
         }
       };
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
           setPeerConnected(true);
-        } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+        } else if (['failed', 'closed'].includes(pc.connectionState)) {
           setPeerConnected(false);
+        } else if (pc.connectionState === 'disconnected') {
+          // Brief blip — give ICE a moment before flipping UI
+          setTimeout(() => {
+            if (peerConnectionRef.current === pc && pc.connectionState === 'disconnected') {
+              setPeerConnected(false);
+            }
+          }, 2000);
         }
       };
 
-      // ── SIGNALING STRATEGY ──────────────────────────────────────────────────
-      // Both sides join the appointment socket room first so signals reach them.
-      // Doctor is the offerer. Patient is the answerer.
-      // We broadcast "ready" so the peer knows to (re)send their offer if they
-      // already set up. Doctor also sends the offer immediately.
-      //
-      // If patient receives the offer BEFORE their PC is ready, handleIncomingSignal
-      // queues it and replays it once the PC exists.
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          setPeerConnected(true);
+        }
+      };
 
-      // 1. Join socket room (idempotent - safe to call multiple times)
+      // Join room + announce readiness so the peer can (re)negotiate
       emit('join:appointment', appointmentId);
-
-      // 2. Announce readiness so the other side can re-initiate if needed
       emit('webrtc:ready', {
         appointmentId,
         senderRole: isDoctor ? 'doctor' : 'patient'
       });
 
-      // 3. Doctor creates and sends the initial offer
-      if (isDoctor) {
-        // Small delay to let patient's socket subscription register
-        await new Promise(r => setTimeout(r, 600));
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal({ type: 'offer', data: offer });
-      }
-
-      // 4. After PC is ready, replay any signals that arrived before PC was set
-      const queued = [...iceQueueRef.current];
-      iceQueueRef.current = [];
+      // Replay any signals that arrived before PC was ready (critical race fix)
+      const queued = [...pendingSignalsRef.current];
+      pendingSignalsRef.current = [];
       for (const queuedSig of queued) {
         await handleIncomingSignal(queuedSig);
       }
 
+      if (generation !== callGenerationRef.current) return;
+
+      if (isDoctor) {
+        // Short delay so patient socket listeners are attached, then offer
+        await new Promise((r) => setTimeout(r, 400));
+        if (generation !== callGenerationRef.current) return;
+        await createDoctorOffer('start');
+      } else {
+        // Patient: if no offer arrives quickly, ask doctor to re-offer
+        setTimeout(() => {
+          if (generation !== callGenerationRef.current) return;
+          const current = peerConnectionRef.current;
+          if (current && !current.currentRemoteDescription) {
+            emit('webrtc:request-offer', {
+              appointmentId,
+              senderRole: 'patient'
+            });
+            emit('webrtc:ready', {
+              appointmentId,
+              senderRole: 'patient'
+            });
+          }
+        }, 2500);
+      }
     } catch (err) {
       console.error('WebRTC start error:', err);
       setAlert({
         type: 'error',
-        message: 'Camera or microphone not available: ' + (err.message || 'Please grant browser permissions.')
+        message: 'Unable to start video session: ' + (err.message || 'Please retry Reconnect Video.')
       });
     }
-  }, [appointmentId, isDoctor, emit, sendSignal, stopNativeCall, handleIncomingSignal]);
+  }, [
+    appointmentId,
+    isDoctor,
+    emit,
+    sendSignal,
+    handleIncomingSignal,
+    acquireLocalMedia,
+    attachLocalPreview,
+    attachRemoteTrack,
+    createDoctorOffer
+  ]);
+
+  // Keep local <video> attached across re-renders / tab switches
+  useEffect(() => {
+    attachLocalPreview(localStreamRef.current);
+  }, [localStreamVersion, attachLocalPreview, peerConnected]);
 
   const toggleMic = () => {
     if (localStreamRef.current) {
@@ -551,47 +852,44 @@ export default function ConsultationRoom() {
     // Both doctor and patient must join the socket room first
     joinAppointmentRoom(appointmentId);
 
-    const t = setTimeout(() => startNativeCall(), 500);
+    const t = setTimeout(() => startNativeCall(), 300);
+
+    const myRole = isDoctor ? 'doctor' : 'patient';
 
     // Socket: listen for incoming WebRTC signals from the peer
     const unsubSignal = subscribe('webrtc:signal', (payload) => {
-      const myRole = isDoctor ? 'doctor' : 'patient';
       if (payload?.senderRole && payload.senderRole !== myRole) {
         handleIncomingSignal(payload.signal);
       }
     });
 
-    // Socket: when peer announces ready
-    const unsubReady = subscribe('webrtc:peer-ready', async (payload) => {
-      const myRole = isDoctor ? 'doctor' : 'patient';
-      if (!payload?.senderRole || payload.senderRole === myRole) return;
-
-      // If doctor, resend offer to new patient connection
-      if (isDoctor && peerConnectionRef.current) {
-        const pc = peerConnectionRef.current;
-        try {
-          const offer = await pc.createOffer({ iceRestart: true });
-          await pc.setLocalDescription(offer);
-          sendSignal({ type: 'offer', data: offer });
-        } catch {}
+    // HTTP-path socket broadcast (backup when peers miss webrtc:signal)
+    const unsubHttpSignal = subscribe('consultation:signal', (payload) => {
+      if (payload?.senderRole && payload.senderRole !== myRole && payload?.signal) {
+        handleIncomingSignal({
+          type: payload.signal.type,
+          data: payload.signal.data
+        });
       }
     });
 
-    // Socket: peer just joined the room (happens on page load/reconnect)
-    const unsubJoined = subscribe('webrtc:peer-joined', async () => {
-      // Doctor re-sends offer any time the patient (re)connects to the room
-      if (isDoctor && peerConnectionRef.current) {
-        const pc = peerConnectionRef.current;
-        try {
-          if (pc.signalingState === 'stable' || pc.signalingState === 'have-local-offer') {
-            const offer = await pc.createOffer({ iceRestart: true });
-            await pc.setLocalDescription(offer);
-            sendSignal({ type: 'offer', data: offer });
-          }
-        } catch {}
-      }
-      // Patient: announce that they are also ready so doctor knows to re-offer
-      if (!isDoctor) {
+    // Peer ready → doctor offers once (no aggressive iceRestart spam)
+    const unsubReady = subscribe('webrtc:peer-ready', (payload) => {
+      if (!payload?.senderRole || payload.senderRole === myRole) return;
+      if (isDoctor) createDoctorOffer('peer-ready');
+    });
+
+    // Patient requests a fresh offer
+    const unsubRequestOffer = subscribe('webrtc:request-offer', (payload) => {
+      if (!isDoctor) return;
+      if (payload?.senderRole === 'patient') createDoctorOffer('request-offer');
+    });
+
+    // Peer joined room → gentle re-offer / ready ping (skip if already connected)
+    const unsubJoined = subscribe('webrtc:peer-joined', () => {
+      if (isDoctor) {
+        createDoctorOffer('peer-joined');
+      } else {
         emit('webrtc:ready', {
           appointmentId,
           senderRole: 'patient'
@@ -599,22 +897,27 @@ export default function ConsultationRoom() {
       }
     });
 
-    // Fallback polling for signals every 2.5 seconds (in case socket drops)
+    // Fallback polling — use since= to avoid replaying the entire history
     const signalPoll = setInterval(async () => {
       if (!sessionRef.current?._id) return;
       try {
-        const res = await api.get(`/consultation/${sessionRef.current._id}/signals`);
+        const params = {};
+        if (lastSignalPollAtRef.current) params.since = lastSignalPollAtRef.current;
+        const res = await api.get(`/consultation/${sessionRef.current._id}/signals`, { params });
+        if (res.data?.serverTime) lastSignalPollAtRef.current = res.data.serverTime;
         const signals = res.data?.signals || [];
         for (const s of signals) {
-          handleIncomingSignal(s);
+          handleIncomingSignal({ type: s.type, data: s.data });
         }
       } catch {}
-    }, 2500);
+    }, 2000);
 
     return () => {
       clearTimeout(t);
       unsubSignal();
+      unsubHttpSignal();
       unsubReady();
+      unsubRequestOffer();
       unsubJoined();
       clearInterval(signalPoll);
       stopNativeCall();
@@ -1161,7 +1464,7 @@ export default function ConsultationRoom() {
                 ref={remoteVideoRef}
                 autoPlay
                 playsInline
-                className={`w-full h-full object-cover transition-opacity duration-300 ${peerConnected ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${peerConnected ? 'opacity-100' : 'opacity-0'}`}
               />
 
               {/* Waiting for peer overlay */}
