@@ -256,4 +256,68 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+// PUT /api/auth/me - Update current user profile (alias for /user/profile/edit)
+router.put('/me', auth, async (req, res) => {
+  try {
+    const { name, email, phone, specialization, licenseNumber, bio, consultationFee, availableSlots,
+            dateOfBirth, gender, bloodGroup, address, emergencyContact } = req.body;
+
+    // Validate email if provided
+    if (email) {
+      const normalizedEmail = email.toLowerCase().trim();
+      const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: req.user._id } });
+      if (existing) {
+        return res.status(409).json({ message: 'This email is already in use by another account.' });
+      }
+    }
+
+    // Build update object based on role
+    const updateData = {};
+    if (name) updateData.name = name.trim();
+    if (email) updateData.email = email.toLowerCase().trim();
+    if (phone) updateData.phone = phone.replace(/[\s\-\(\)]/g, '');
+
+    // Doctor-specific fields
+    if (req.user.role === 'doctor') {
+      if (specialization !== undefined) updateData.specialization = specialization;
+      if (licenseNumber !== undefined) updateData.licenseNumber = licenseNumber;
+      if (bio !== undefined) updateData.bio = bio;
+      if (consultationFee !== undefined) updateData.consultationFee = consultationFee;
+      if (availableSlots !== undefined) updateData.availableSlots = availableSlots;
+    }
+
+    // Patient-specific fields
+    if (req.user.role === 'patient') {
+      if (dateOfBirth !== undefined) updateData.dateOfBirth = dateOfBirth;
+      if (gender !== undefined) updateData.gender = gender;
+      if (bloodGroup !== undefined) updateData.bloodGroup = bloodGroup;
+      if (address !== undefined) updateData.address = address;
+      if (emergencyContact !== undefined) updateData.emergencyContact = emergencyContact;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Update delegation info
+    const userObj = updatedUser.toObject();
+    userObj.isDelegatedAdmin = Boolean(req.user.isDelegatedAdmin);
+    userObj.delegation = req.user.delegation || null;
+
+    res.json({
+      message: 'Profile updated successfully!',
+      user: userObj
+    });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ message: 'Server error updating profile.' });
+  }
+});
+
 module.exports = router;

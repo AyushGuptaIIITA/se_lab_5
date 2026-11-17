@@ -45,6 +45,7 @@ export function SocketProvider({ children }) {
     socket.on('connect', () => {
       setConnected(true);
       if (userIdRef.current) {
+        console.log('[SOCKET CONTEXT] Connected, joining user room:', userIdRef.current);
         socket.emit('join:user', userIdRef.current);
       }
       // Re-join all appointment rooms after reconnect (critical for live video)
@@ -73,6 +74,7 @@ export function SocketProvider({ children }) {
   // Re-join user room whenever user logs in or updates
   useEffect(() => {
     if (socketRef.current && user?._id) {
+      console.log('[SOCKET CONTEXT] User changed, joining user room:', user._id.toString());
       socketRef.current.emit('join:user', user._id.toString());
     }
   }, [user?._id]);

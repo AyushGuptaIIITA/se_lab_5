@@ -48,10 +48,12 @@ export function NotificationProvider({ children }) {
   useEffect(() => {
     if (!user) return;
     
+    console.log('[NOTIFICATION CONTEXT] Setting up real-time listeners for user:', user._id);
     fetchNotifications();
     fetchUnreadCount();
 
     const unsubNew = subscribe('notification:new', (payload) => {
+      console.log('[NOTIFICATION CONTEXT] Received notification:new event:', payload);
       if (payload?.notification) {
         setNotifications(prev => [payload.notification, ...prev]);
         setUnreadCount(prev => prev + 1);
@@ -61,8 +63,9 @@ export function NotificationProvider({ children }) {
     });
 
     const unsubRead = subscribe('notification:read', (payload) => {
+      console.log('[NOTIFICATION CONTEXT] Received notification:read event:', payload);
       if (payload?.notificationId) {
-        setNotifications(prev => prev.map(n => 
+        setNotifications(prev => prev.map(n =>
           n._id === payload.notificationId ? { ...n, read: true } : n
         ));
         setUnreadCount(prev => Math.max(0, prev - 1));
@@ -70,11 +73,13 @@ export function NotificationProvider({ children }) {
     });
 
     const unsubAllRead = subscribe('notification:all-read', () => {
+      console.log('[NOTIFICATION CONTEXT] Received notification:all-read event');
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
     });
 
     return () => {
+      console.log('[NOTIFICATION CONTEXT] Cleaning up listeners');
       unsubNew();
       unsubRead();
       unsubAllRead();

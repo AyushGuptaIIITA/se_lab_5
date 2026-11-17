@@ -19,15 +19,21 @@ const io = new Server(httpServer, {
 app.set('io', io);
 
 io.on('connection', (socket) => {
+  console.log(`[SOCKET] Client connected: ${socket.id}`);
+
   // Client joins its own user-room so we can target it
   socket.on('join:user', (userId) => {
-    if (userId) socket.join(`user:${userId}`);
+    if (userId) {
+      socket.join(`user:${userId}`);
+      console.log(`[SOCKET] User ${userId} joined room user:${userId}`);
+    }
   });
 
   // Client joins an appointment room (doctor + patient of that appointment)
   socket.on('join:appointment', (appointmentId) => {
     if (appointmentId) {
       socket.join(`appt:${appointmentId}`);
+      console.log(`[SOCKET] Client ${socket.id} joined appointment room appt:${appointmentId}`);
       // Notify other participants that this peer joined the room
       socket.to(`appt:${appointmentId}`).emit('webrtc:peer-joined', { appointmentId });
     }
@@ -94,6 +100,24 @@ if (process.env.NODE_ENV === 'production') {
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
 }
+
+// Response logging middleware to track 429s
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    if (res.statusCode === 429) {
+      console.error(`[429 TRACE] ${req.method} ${req.originalUrl} | Status: 429 | IP: ${req.ip} | User: ${req.user?._id?.toString() || 'unauth'} | Duration: ${duration}ms | User-Agent: ${req.get('User-Agent')}`);
+    }
+    // Log all errors for debugging
+    if (res.statusCode >= 500) {
+      console.error(`[ERROR TRACE] ${req.method} ${req.originalUrl} | Status: ${res.statusCode} | IP: ${req.ip} | User: ${req.user?._id?.toString() || 'unauth'} | Duration: ${duration}ms`);
+    }
+    return originalSend.call(this, data);
+  };
+  next();
+});
 
 // Global error handler
 app.use((err, req, res, next) => {

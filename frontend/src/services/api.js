@@ -24,8 +24,20 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log 429 responses for debugging
+    if (response.status === 429) {
+      console.error(`[FRONTEND 429] ${response.config?.method?.toUpperCase()} ${response.config?.url} | Status: 429 | Retry-After: ${response.headers?.['retry-after'] || 'none'}`);
+    }
+    return response;
+  },
   (error) => {
+    if (error.response?.status === 429) {
+      console.error(`[FRONTEND 429 ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url} | Status: 429 | Message: ${error.response?.data?.message || error.message} | Retry-After: ${error.response?.headers?.['retry-after'] || 'none'}`);
+    } else if (error.response?.status >= 500) {
+      console.error(`[FRONTEND ERROR] ${error.config?.method?.toUpperCase()} ${error.config?.url} | Status: ${error.response?.status} | Message: ${error.response?.data?.message || error.message}`);
+    }
+    
     if (error.response?.status === 401) {
       const url = error.config?.url || '';
       const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');

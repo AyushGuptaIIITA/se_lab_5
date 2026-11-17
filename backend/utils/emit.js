@@ -34,8 +34,13 @@ function emit(req, event, payload) {
 function emitToUser(req, userId, event, payload) {
   try {
     const io = req.app.get('io');
-    if (!io || !userId) return;
+    if (!io || !userId) {
+      console.warn(`[EMIT TO USER] Missing io or userId: io=${!!io}, userId=${userId}`);
+      return;
+    }
+    console.log(`[EMIT TO USER] Emitting ${event} to user:${userId}`);
     io.to(`user:${userId}`).emit(event, payload);
+    console.log(`[EMIT TO USER] Emit completed for ${event} to user:${userId}`);
   } catch (e) {
     console.warn('Socket emitToUser error:', e.message);
   }

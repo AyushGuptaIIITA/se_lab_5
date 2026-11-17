@@ -525,9 +525,38 @@ router.get('/:sessionId/signals', auth, async (req, res) => {
   }
 });
 
+// In-memory cache for predict-disease to prevent duplicate requests
+const predictionCache = new Map();
+const CACHE_TTL = 5000; // 5 seconds
+
+// Cleanup cache periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of predictionCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      predictionCache.delete(key);
+    }
+  }
+}, 30000);
+
 // POST /api/consultation/predict-disease — ML symptom analysis
 // Takes clinical notes + chat transcript and returns likely disease predictions
 router.post('/predict-disease', auth, async (req, res) => {
+  const startTime = Date.now();
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userId = req.user?._id?.toString() || 'unknown';
+  
+  // Create cache key from request body
+  const cacheKey = `${userId}:${JSON.stringify(req.body)}`;
+  const cached = predictionCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    console.log(`[PREDICT-DISEASE] Cache hit | User: ${userId} | IP: ${clientIp} | Duration: ${Date.now() - startTime}ms`);
+    return res.json(cached.response);
+  }
+  
+  console.log(`[PREDICT-DISEASE] Request from user ${userId} (IP: ${clientIp}) | Body keys: ${Object.keys(req.body).join(', ')}`);
+  
   try {
     const { symptoms, chatTranscript, clinicalNotes } = req.body;
 
@@ -539,6 +568,7 @@ router.post('/predict-disease', auth, async (req, res) => {
     ].join(' ').toLowerCase();
 
     if (!corpus.trim()) {
+      console.warn(`[PREDICT-DISEASE] 400 - No symptom data provided | User: ${userId} | IP: ${clientIp} | Duration: ${Date.now() - startTime}ms`);
       return res.status(400).json({ message: 'No symptom data provided for analysis.' });
     }
 
@@ -705,22 +735,34 @@ router.post('/predict-disease', auth, async (req, res) => {
       });
 
     if (predictions.length === 0) {
-      return res.json({
+      const response = {
         predictions: [],
         message: 'Insufficient symptom data for confident prediction. Please document more specific symptoms.',
         analysisNote: 'Consider adding chief complaints, duration, and associated symptoms for better accuracy.'
-      });
+      };
+      
+      // Cache the response
+      predictionCache.set(cacheKey, { response, timestamp: Date.now() });
+      
+      console.log(`[PREDICT-DISEASE] 200 - No predictions found | User: ${userId} | IP: ${clientIp} | Duration: ${Date.now() - startTime}ms | Corpus words: ${corpus.split(/\s+/).filter(Boolean).length}`);
+      return res.json(response);
     }
 
-    res.json({
+    const response = {
       predictions,
       corpusWordCount: corpus.split(/\s+/).filter(Boolean).length,
       analysisTimestamp: new Date().toISOString(),
       model: 'TeleMed-SymptomNet v1.0 (Rule-Based NLP)',
       disclaimer: 'These predictions are AI-assisted suggestions based on documented symptoms. Final diagnosis must be made by a qualified medical professional.'
-    });
+    };
+    
+    // Cache the response
+    predictionCache.set(cacheKey, { response, timestamp: Date.now() });
+    
+    console.log(`[PREDICT-DISEASE] 200 - ${predictions.length} predictions returned | User: ${userId} | IP: ${clientIp} | Duration: ${Date.now() - startTime}ms | Corpus words: ${corpus.split(/\s+/).filter(Boolean).length}`);
+    res.json(response);
   } catch (err) {
-    console.error('Disease prediction error:', {
+    console.error(`[PREDICT-DISEASE] 500 ERROR | User: ${userId} | IP: ${clientIp} | Duration: ${Date.now() - startTime}ms | Error: ${err.message}`, {
       message: err.message,
       stack: err.stack,
       symptoms,
@@ -733,13 +775,22 @@ router.post('/predict-disease', auth, async (req, res) => {
 
 // POST /api/consultation/:sessionId/transcribe/start — Start patient transcription session (doctor only)
 router.post('/:sessionId/transcribe/start', auth, doctorOnly, async (req, res) => {
+  const startTime = Date.now();
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userId = req.user?._id?.toString() || 'unknown';
+  const sessionId = req.params.sessionId;
+  
+  console.log(`[TRANSCRIBE START] Request | Session: ${sessionId} | User: ${userId} | IP: ${clientIp}`);
+  
   try {
     const session = await ConsultationSession.findById(req.params.sessionId);
     if (!session) {
+      console.warn(`[TRANSCRIBE START] 404 - Session not found | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(404).json({ message: 'Consultation session not found.' });
     }
 
     if (session.doctor.toString() !== req.user._id.toString()) {
+      console.warn(`[TRANSCRIBE START] 403 - Access denied | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(403).json({ message: 'Access denied.' });
     }
 
@@ -769,32 +820,44 @@ router.post('/:sessionId/transcribe/start', auth, doctorOnly, async (req, res) =
       console.warn('Audit log error:', auditErr.message);
     }
 
+    console.log(`[TRANSCRIBE START] 200 - Started | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
     res.json({
       message: 'Transcription session started.',
       transcription: result
     });
   } catch (err) {
-    console.error('Start transcription error:', err);
+    console.error(`[TRANSCRIBE START] 500 ERROR | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms | Error: ${err.message}`);
     res.status(500).json({ message: err.message || 'Server error starting transcription.' });
   }
 });
 
 // POST /api/consultation/:sessionId/transcribe/chunk — Send audio chunk for transcription
 router.post('/:sessionId/transcribe/chunk', auth, async (req, res) => {
+  const startTime = Date.now();
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userId = req.user?._id?.toString() || 'unknown';
+  const sessionId = req.params.sessionId;
+  const metadata = req.body.metadata || {};
+  
+  console.log(`[TRANSCRIBE CHUNK] Request | Session: ${sessionId} | User: ${userId} | IP: ${clientIp} | Seq: ${metadata.sequence} | Timestamp: ${metadata.timestamp}`);
+  
   try {
     const { audioBase64, metadata } = req.body;
     
     if (!audioBase64) {
+      console.warn(`[TRANSCRIBE CHUNK] 400 - Missing audioBase64 | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(400).json({ message: 'audioBase64 is required.' });
     }
 
     const session = await ConsultationSession.findById(req.params.sessionId);
     if (!session) {
+      console.warn(`[TRANSCRIBE CHUNK] 404 - Session not found | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(404).json({ message: 'Consultation session not found.' });
     }
 
     // Only doctor can send chunks (they capture patient's remote audio)
     if (session.doctor.toString() !== req.user._id.toString()) {
+      console.warn(`[TRANSCRIBE CHUNK] 403 - Access denied | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(403).json({ message: 'Access denied.' });
     }
 
@@ -805,29 +868,40 @@ router.post('/:sessionId/transcribe/chunk', auth, async (req, res) => {
       metadata || {}
     );
 
+    console.log(`[TRANSCRIBE CHUNK] 200 - Processed | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms | Chunk count: ${result.chunkCount}`);
     res.json({
       message: 'Audio chunk processed.',
       transcription: result
     });
   } catch (err) {
-    console.error('Process transcription chunk error:', err);
+    console.error(`[TRANSCRIBE CHUNK] 500 ERROR | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms | Error: ${err.message}`);
     res.status(500).json({ message: err.message || 'Server error processing audio chunk.' });
   }
 });
 
 // POST /api/consultation/:sessionId/transcribe/end — Finalize transcription and get full transcript
 router.post('/:sessionId/transcribe/end', auth, doctorOnly, async (req, res) => {
+  const startTime = Date.now();
+  const clientIp = req.ip || req.connection?.remoteAddress || 'unknown';
+  const userId = req.user?._id?.toString() || 'unknown';
+  const sessionId = req.params.sessionId;
+  
+  console.log(`[TRANSCRIBE END] Request | Session: ${sessionId} | User: ${userId} | IP: ${clientIp}`);
+  
   try {
     const session = await ConsultationSession.findById(req.params.sessionId);
     if (!session) {
+      console.warn(`[TRANSCRIBE END] 404 - Session not found | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(404).json({ message: 'Consultation session not found.' });
     }
 
     if (session.doctor.toString() !== req.user._id.toString()) {
+      console.warn(`[TRANSCRIBE END] 403 - Access denied | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms`);
       return res.status(403).json({ message: 'Access denied.' });
     }
 
-    // Finalize transcription
+    // Finalize transcription - this is where AssemblyAI is called
+    console.log(`[TRANSCRIBE END] Calling transcriptionService.finalizeSession | Session: ${sessionId}`);
     const result = await transcriptionService.finalizeSession(req.params.sessionId);
 
     // Save transcript to consultation session
@@ -856,6 +930,7 @@ router.post('/:sessionId/transcribe/end', auth, doctorOnly, async (req, res) => 
       console.warn('Audit log error:', auditErr.message);
     }
 
+    console.log(`[TRANSCRIBE END] 200 - Completed | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms | Word count: ${result.wordCount}`);
     res.json({
       message: 'Transcription completed.',
       transcript: result.transcript,
@@ -864,7 +939,7 @@ router.post('/:sessionId/transcribe/end', auth, doctorOnly, async (req, res) => 
       duration: result.duration
     });
   } catch (err) {
-    console.error('End transcription error:', err);
+    console.error(`[TRANSCRIBE END] 500 ERROR | Session: ${sessionId} | User: ${userId} | Duration: ${Date.now() - startTime}ms | Error: ${err.message}`);
     
     // Update session status to failed
     try {

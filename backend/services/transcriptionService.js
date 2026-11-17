@@ -53,8 +53,11 @@ class TranscriptionService {
   async processChunk(sessionId, audioBase64, metadata = {}) {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
+      console.error(`[TRANSCRIPTION SERVICE] processChunk - Session not found: ${sessionId}`);
       throw new Error('Transcription session not found');
     }
+
+    console.log(`[TRANSCRIPTION SERVICE] processChunk | Session: ${sessionId} | Chunk seq: ${metadata.sequence} | Total chunks: ${session.chunks.length + 1} | Audio size: ${audioBase64.length} chars`);
 
     // Store chunk for batch processing
     session.chunks.push({
@@ -65,10 +68,10 @@ class TranscriptionService {
 
     // For real-time, we could send to AssemblyAI WebSocket here
     // For now, we'll do batch processing on session end
-    return { 
-      success: true, 
+    return {
+      success: true,
       chunkCount: session.chunks.length,
-      partialTranscript: session.transcript 
+      partialTranscript: session.transcript
     };
   }
 
@@ -80,14 +83,19 @@ class TranscriptionService {
   async finalizeSession(sessionId) {
     const session = this.activeSessions.get(sessionId);
     if (!session) {
+      console.error(`[TRANSCRIPTION SERVICE] finalizeSession - Session not found: ${sessionId}`);
       throw new Error('Transcription session not found');
     }
+
+    console.log(`[TRANSCRIPTION SERVICE] finalizeSession | Session: ${sessionId} | Provider: ${this.provider} | Has API Key: ${!!this.assemblyaiApiKey} | Chunks: ${session.chunks.length} | Created: ${session.createdAt}`);
 
     let result;
     
     if (this.provider === 'assemblyai' && this.assemblyaiApiKey) {
+      console.log(`[TRANSCRIPTION SERVICE] Using AssemblyAI for session ${sessionId}`);
       result = await this._transcribeWithAssemblyAI(session);
     } else {
+      console.log(`[TRANSCRIPTION SERVICE] Using Whisper for session ${sessionId}`);
       result = await this._transcribeWithWhisper(session);
     }
 
@@ -99,6 +107,7 @@ class TranscriptionService {
     // Clean up
     this.activeSessions.delete(sessionId);
 
+    console.log(`[TRANSCRIPTION SERVICE] finalizeSession completed | Session: ${sessionId} | Duration: ${session.completedAt - session.createdAt}ms | Word count: ${session.transcript.split(/\s+/).filter(Boolean).length}`);
     return {
       sessionId,
       transcript: session.transcript,
@@ -137,13 +146,15 @@ class TranscriptionService {
     const fetchWithRetry = async (url, options, retries = 3, baseDelay = 1000) => {
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
+          const startTime = Date.now();
           const response = await fetch(url, options);
+          const duration = Date.now() - startTime;
           
           // Handle rate limiting (429)
           if (response.status === 429) {
             const retryAfter = response.headers.get('retry-after');
             const delay = retryAfter ? parseInt(retryAfter) * 1000 : baseDelay * Math.pow(2, attempt);
-            console.warn(`AssemblyAI rate limited (429). Retry attempt ${attempt + 1}/${retries} after ${delay}ms`);
+            console.error(`[429 TRACE] AssemblyAI rate limited (429) for session ${session.id} | URL: ${url} | Attempt: ${attempt + 1}/${retries} | Retry-After: ${retryAfter || 'none'} | Delay: ${delay}ms | Duration: ${duration}ms`);
             if (attempt < retries) {
               await new Promise(r => setTimeout(r, delay));
               continue;
@@ -154,9 +165,11 @@ class TranscriptionService {
           // Handle other HTTP errors
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
+            console.error(`[ERROR TRACE] AssemblyAI API error for session ${session.id} | URL: ${url} | Status: ${response.status} | Error: ${errorData.error || response.statusText} | Duration: ${duration}ms`);
             throw new Error(`AssemblyAI API error: ${response.status} - ${errorData.error || response.statusText}`);
           }
           
+          console.log(`[AssemblyAI] Success for session ${session.id} | URL: ${url} | Status: ${response.status} | Duration: ${duration}ms`);
           return response;
         } catch (error) {
           if (attempt === retries) throw error;

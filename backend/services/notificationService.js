@@ -33,9 +33,12 @@ class NotificationService {
     // Populate actor for real-time emit
     await notification.populate('actor', 'name role');
     
+    console.log(`[NOTIFICATION SERVICE] Created notification for recipient: ${recipientId}, type: ${type}, title: ${title}`);
+    
     // Emit real-time via Socket.io if req is provided
     if (req) {
       try {
+        console.log(`[NOTIFICATION SERVICE] Emitting real-time notification to user:${recipientId.toString()}`);
         emitToUser(req, recipientId.toString(), 'notification:new', {
           notification: {
             _id: notification._id,
@@ -50,6 +53,7 @@ class NotificationService {
             actor: notification.actor
           }
         });
+        console.log(`[NOTIFICATION SERVICE] Real-time emit completed`);
       } catch (e) {
         console.warn('Socket emit failed for notification:', e.message);
       }

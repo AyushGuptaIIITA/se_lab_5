@@ -168,6 +168,9 @@ export default function ConsultationRoom() {
   const [mlLoading, setMlLoading] = useState(false);
   const [showMlPanel, setShowMlPanel] = useState(true);
   const [mlError, setMlError] = useState(null);
+  
+  // Request deduplication ref for ML predictions
+  const mlRequestRef = useRef(null);
 
   // ── Real-time Speech Recognition state (doctor only) ──────────────────────
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -721,6 +724,18 @@ export default function ConsultationRoom() {
 
   // ─── ML prediction that also includes patient speech transcript ────────────
   const runMlPredictionWithSpeech = useCallback(async (speechText) => {
+    // Request deduplication - prevent duplicate calls within 3 seconds
+    const requestKey = `${appointment?.symptoms || ''}|${notes}|${speechText || ''}|${messages.length}`;
+    const now = Date.now();
+    const lastRequest = mlRequestRef.current;
+    
+    if (lastRequest && lastRequest.key === requestKey && (now - lastRequest.timestamp) < 3000) {
+      console.log('[ML PREDICTION] Skipping duplicate request (within 3s)');
+      return;
+    }
+    
+    mlRequestRef.current = { key: requestKey, timestamp: now };
+    
     setMlLoading(true);
     setShowMlPanel(true);
     try {
