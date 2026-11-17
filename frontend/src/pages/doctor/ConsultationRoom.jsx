@@ -669,7 +669,7 @@ export default function ConsultationRoom() {
   // ─── Patient Audio Capture for AI Transcription ────────────────────────────
   // Replaces old doctor's microphone speech recognition with patient's remote audio
   const [isPatientAudioActive, setIsPatientAudioActive] = useState(false);
-  const [patientAudioError, setPatientAudioError] = useState(null);
+  // patientAudioError comes from the hook
 
   // Handle transcript updates from patient audio capture
   const handlePatientTranscriptUpdate = useCallback((transcript) => {
@@ -689,13 +689,12 @@ export default function ConsultationRoom() {
   const startPatientAudioCaptureHandler = async () => {
     if (isPatientAudioActive || !remoteStream) return;
     try {
-      setPatientAudioError(null);
       await startPatientAudioCapture(handlePatientTranscriptUpdate);
       setIsPatientAudioActive(true);
       setShowMlPanel(true);
     } catch (e) {
       console.warn('Patient audio capture start error:', e);
-      setPatientAudioError(e.message || 'Failed to start patient audio capture');
+      // Error is managed by the hook and available via patientAudioError
     }
   };
 
@@ -707,7 +706,7 @@ export default function ConsultationRoom() {
       // The final transcript will be available in patientTranscript state
     } catch (e) {
       console.warn('Patient audio capture stop error:', e);
-      setPatientAudioError(e.message || 'Failed to stop patient audio capture');
+      // Error is managed by the hook and available via patientAudioError
     }
   };
 
