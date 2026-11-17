@@ -275,9 +275,9 @@ router.patch('/:id/status', auth, async (req, res) => {
       const ConsultationSession = require('../models/ConsultationSession');
       await ConsultationSession.updateMany(
         { appointment: appointment._id, status: 'in-progress' },
-        { 
-          status: status === 'completed' ? 'completed' : 'ended', 
-          endedAt: new Date() 
+        {
+          status: status === 'completed' ? 'completed' : 'ended',
+          endedAt: new Date()
         }
       );
     }
@@ -294,9 +294,16 @@ router.patch('/:id/status', auth, async (req, res) => {
       req.ip
     );
 
+    // Fetch fresh populated appointment to return
+    const updatedAppointment = await Appointment.findById(appointment._id)
+      .populate('patient', 'name email')
+      .populate('doctor', 'name email')
+      .populate('prescription')
+      .populate('consultationSession');
+
     res.json({
       message: `Appointment ${status} successfully.`,
-      appointment
+      appointment: updatedAppointment
     });
 
     // Real-time: notify both doctor and patient of status change

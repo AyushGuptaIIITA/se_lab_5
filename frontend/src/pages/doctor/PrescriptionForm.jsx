@@ -179,8 +179,18 @@ export default function PrescriptionForm() {
             }).finally(() => setLoadingAI(false));
           }
         }
-      } catch {
-        setAlert({ type: 'error', message: 'Failed to load consultation details for this prescription.' });
+      } catch (err) {
+        console.error('Failed to load appointment for prescription:', {
+          activeAptId,
+          status: err.response?.status,
+          message: err.response?.data?.message,
+          data: err.response?.data,
+          stack: err.stack
+        });
+        setAlert({
+          type: 'error',
+          message: err.response?.data?.message || `Failed to load consultation details: ${err.message}`
+        });
       } finally {
         setLoading(false);
       }
