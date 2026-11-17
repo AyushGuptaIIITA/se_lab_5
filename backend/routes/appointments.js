@@ -116,20 +116,27 @@ router.post('/', auth, patientOnly, async (req, res) => {
       req.ip
     );
 
+    // Real-time: notify doctor of new appointment (before response to avoid header issues)
+    try {
+      emit(req, 'appointment:new', {
+        appointmentId: appointment._id.toString(),
+        doctorId: appointment.doctor.toString(),
+        patientId: appointment.patient.toString()
+      });
+    } catch (emitErr) {
+      console.warn('Socket emit error (non-blocking):', emitErr.message);
+    }
+
     res.status(201).json({
       message: 'Appointment booked successfully.',
       appointment: populatedAppointment
     });
-
-    // Real-time: notify doctor of new appointment
-    emit(req, 'appointment:new', {
-      appointmentId: appointment._id.toString(),
-      doctorId: appointment.doctor.toString(),
-      patientId: appointment.patient.toString()
-    });
   } catch (err) {
     console.error('Book appointment error:', err);
-    res.status(500).json({ message: 'Server error booking appointment.' });
+    // Only send error response if headers not already sent
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Server error booking appointment.' });
+    }
   }
 });
 
@@ -330,28 +337,32 @@ router.patch('/:id/status', auth, async (req, res) => {
       consultationSessionStatus: updatedAppointment.consultationSession?.status
     });
 
-    res.json({
-      message: `Appointment ${status} successfully.`,
-      appointment: updatedAppointment
-    });
-
-    // Real-time: notify both doctor and patient of status change
-    emit(req, 'appointment:updated', {
-      appointmentId: appointment._id.toString(),
-      doctorId: appointment.doctor._id.toString(),
-      patientId: appointment.patient._id.toString(),
-      status
-    });
-
-    // Real-time: if call concluded or marked incomplete/cancelled, lead patient and doctor to end the call
-    if (['completed', 'incomplete', 'cancelled'].includes(status)) {
-      emit(req, 'consultation:ended', {
+    // Real-time: notify both doctor and patient of status change (before response)
+    try {
+      emit(req, 'appointment:updated', {
         appointmentId: appointment._id.toString(),
         doctorId: appointment.doctor._id.toString(),
         patientId: appointment.patient._id.toString(),
         status
       });
+
+      // Real-time: if call concluded or marked incomplete/cancelled, lead patient and doctor to end the call
+      if (['completed', 'incomplete', 'cancelled'].includes(status)) {
+        emit(req, 'consultation:ended', {
+          appointmentId: appointment._id.toString(),
+          doctorId: appointment.doctor._id.toString(),
+          patientId: appointment.patient._id.toString(),
+          status
+        });
+      }
+    } catch (emitErr) {
+      console.warn('Socket emit error (non-blocking):', emitErr.message);
     }
+
+    res.json({
+      message: `Appointment ${status} successfully.`,
+      appointment: updatedAppointment
+    });
   } catch (err) {
     console.error('[PATCH /appointments/:id/status] Error updating appointment status:', {
       appointmentId: req.params.id,
@@ -430,13 +441,27 @@ router.patch('/:id/reschedule', auth, doctorOnly, async (req, res) => {
       req.ip
     );
 
+    // Real-time: notify both doctor and patient of reschedule (before response)
+    try {
+      emit(req, 'appointment:updated', {
+        appointmentId: appointment._id.toString(),
+        doctorId: appointment.doctor._id.toString(),
+        patientId: appointment.patient._id.toString(),
+        status: 'rescheduled'
+      });
+    } catch (emitErr) {
+      console.warn('Socket emit error (non-blocking):', emitErr.message);
+    }
+
     res.json({
       message: 'Appointment rescheduled successfully.',
       appointment
     });
   } catch (err) {
     console.error('Reschedule appointment error:', err);
-    res.status(500).json({ message: 'Server error rescheduling appointment.' });
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Server error rescheduling appointment.' });
+    }
   }
 });
 
