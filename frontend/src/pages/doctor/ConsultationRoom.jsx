@@ -103,34 +103,49 @@ export default function ConsultationRoom() {
   }, [appointmentId, isDoctor, emit]);
 
   const handleIncomingSignal = useCallback(async (sig) => {
+    if (!sig) return;
+
+    // If we receive an offer but PC isn't set up yet, queue it
+    if (!peerConnectionRef.current) {
+      iceQueueRef.current.push(sig);
+      return;
+    }
+
     const pc = peerConnectionRef.current;
-    if (!pc || !sig) return;
 
     try {
       if (sig.type === 'offer' && !isDoctor) {
-        await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
-        while (iceQueueRef.current.length > 0) {
-          const candidate = iceQueueRef.current.shift();
-          try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+        // Patient handles offer: set remote, drain ice queue, create answer
+        if (pc.signalingState === 'stable' || pc.signalingState === 'have-remote-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+          // Drain queued ICE candidates now that remote desc is set
+          while (iceQueueRef.current.length > 0) {
+            const queued = iceQueueRef.current.shift();
+            if (queued?.type === 'candidate' && queued.data) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(queued.data)); } catch {}
+            }
+          }
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendSignal({ type: 'answer', data: answer });
         }
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal({ type: 'answer', data: answer });
       } else if (sig.type === 'answer' && isDoctor) {
         if (pc.signalingState === 'have-local-offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(sig.data));
+          // Drain queued ICE candidates
           while (iceQueueRef.current.length > 0) {
-            const candidate = iceQueueRef.current.shift();
-            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+            const queued = iceQueueRef.current.shift();
+            if (queued?.type === 'candidate' && queued.data) {
+              try { await pc.addIceCandidate(new RTCIceCandidate(queued.data)); } catch {}
+            }
           }
         }
       } else if (sig.type === 'candidate' && sig.data) {
         if (pc.remoteDescription && pc.remoteDescription.type) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(sig.data));
-          } catch {}
+          try { await pc.addIceCandidate(new RTCIceCandidate(sig.data)); } catch {}
         } else {
-          iceQueueRef.current.push(sig.data);
+          // Buffer until remote description is set
+          iceQueueRef.current.push(sig);
         }
       }
     } catch (err) {
@@ -156,6 +171,7 @@ export default function ConsultationRoom() {
   const startNativeCall = useCallback(async () => {
     try {
       stopNativeCall();
+      iceQueueRef.current = []; // clear signal queue on fresh start
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
@@ -180,17 +196,16 @@ export default function ConsultationRoom() {
       // Add local media tracks
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // Handle remote incoming stream
+      // Handle remote incoming stream — this fires when the peer's tracks arrive
       pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-          }
-          setPeerConnected(true);
+        const remoteStream = event.streams?.[0];
+        if (remoteStream && remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
         }
+        setPeerConnected(true);
       };
 
-      // Handle ICE candidates
+      // ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           sendSignal({ type: 'candidate', data: event.candidate });
@@ -205,17 +220,38 @@ export default function ConsultationRoom() {
         }
       };
 
-      // Broadcast readiness
+      // ── SIGNALING STRATEGY ──────────────────────────────────────────────────
+      // Both sides join the appointment socket room first so signals reach them.
+      // Doctor is the offerer. Patient is the answerer.
+      // We broadcast "ready" so the peer knows to (re)send their offer if they
+      // already set up. Doctor also sends the offer immediately.
+      //
+      // If patient receives the offer BEFORE their PC is ready, handleIncomingSignal
+      // queues it and replays it once the PC exists.
+
+      // 1. Join socket room (idempotent - safe to call multiple times)
+      emit('join:appointment', appointmentId);
+
+      // 2. Announce readiness so the other side can re-initiate if needed
       emit('webrtc:ready', {
         appointmentId,
         senderRole: isDoctor ? 'doctor' : 'patient'
       });
 
-      // Doctor initiates the offer
+      // 3. Doctor creates and sends the initial offer
       if (isDoctor) {
+        // Small delay to let patient's socket subscription register
+        await new Promise(r => setTimeout(r, 600));
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         sendSignal({ type: 'offer', data: offer });
+      }
+
+      // 4. After PC is ready, replay any signals that arrived before PC was set
+      const queued = [...iceQueueRef.current];
+      iceQueueRef.current = [];
+      for (const queuedSig of queued) {
+        await handleIncomingSignal(queuedSig);
       }
 
     } catch (err) {
@@ -225,7 +261,7 @@ export default function ConsultationRoom() {
         message: 'Camera or microphone not available: ' + (err.message || 'Please grant browser permissions.')
       });
     }
-  }, [appointmentId, isDoctor, emit, sendSignal, stopNativeCall]);
+  }, [appointmentId, isDoctor, emit, sendSignal, stopNativeCall, handleIncomingSignal]);
 
   const toggleMic = () => {
     if (localStreamRef.current) {
@@ -512,9 +548,12 @@ export default function ConsultationRoom() {
   useEffect(() => {
     if (session?.status !== 'in-progress') return;
 
-    const t = setTimeout(() => startNativeCall(), 400);
+    // Both doctor and patient must join the socket room first
+    joinAppointmentRoom(appointmentId);
 
-    // Socket: listen for incoming WebRTC signals
+    const t = setTimeout(() => startNativeCall(), 500);
+
+    // Socket: listen for incoming WebRTC signals from the peer
     const unsubSignal = subscribe('webrtc:signal', (payload) => {
       const myRole = isDoctor ? 'doctor' : 'patient';
       if (payload?.senderRole && payload.senderRole !== myRole) {
@@ -522,10 +561,13 @@ export default function ConsultationRoom() {
       }
     });
 
-    // Socket: listen when peer announces ready
+    // Socket: when peer announces ready
     const unsubReady = subscribe('webrtc:peer-ready', async (payload) => {
       const myRole = isDoctor ? 'doctor' : 'patient';
-      if (payload?.senderRole && payload.senderRole !== myRole && isDoctor && peerConnectionRef.current) {
+      if (!payload?.senderRole || payload.senderRole === myRole) return;
+
+      // If doctor, resend offer to new patient connection
+      if (isDoctor && peerConnectionRef.current) {
         const pc = peerConnectionRef.current;
         try {
           const offer = await pc.createOffer({ iceRestart: true });
@@ -535,7 +577,29 @@ export default function ConsultationRoom() {
       }
     });
 
-    // Fallback polling for signals every 2.5 seconds
+    // Socket: peer just joined the room (happens on page load/reconnect)
+    const unsubJoined = subscribe('webrtc:peer-joined', async () => {
+      // Doctor re-sends offer any time the patient (re)connects to the room
+      if (isDoctor && peerConnectionRef.current) {
+        const pc = peerConnectionRef.current;
+        try {
+          if (pc.signalingState === 'stable' || pc.signalingState === 'have-local-offer') {
+            const offer = await pc.createOffer({ iceRestart: true });
+            await pc.setLocalDescription(offer);
+            sendSignal({ type: 'offer', data: offer });
+          }
+        } catch {}
+      }
+      // Patient: announce that they are also ready so doctor knows to re-offer
+      if (!isDoctor) {
+        emit('webrtc:ready', {
+          appointmentId,
+          senderRole: 'patient'
+        });
+      }
+    });
+
+    // Fallback polling for signals every 2.5 seconds (in case socket drops)
     const signalPoll = setInterval(async () => {
       if (!sessionRef.current?._id) return;
       try {
@@ -551,6 +615,7 @@ export default function ConsultationRoom() {
       clearTimeout(t);
       unsubSignal();
       unsubReady();
+      unsubJoined();
       clearInterval(signalPoll);
       stopNativeCall();
     };

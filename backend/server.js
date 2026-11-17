@@ -26,7 +26,11 @@ io.on('connection', (socket) => {
 
   // Client joins an appointment room (doctor + patient of that appointment)
   socket.on('join:appointment', (appointmentId) => {
-    if (appointmentId) socket.join(`appt:${appointmentId}`);
+    if (appointmentId) {
+      socket.join(`appt:${appointmentId}`);
+      // Notify other participants that this peer joined the room
+      socket.to(`appt:${appointmentId}`).emit('webrtc:peer-joined', { appointmentId });
+    }
   });
 
   // WebRTC 1-on-1 P2P signaling relay (instant, unlimited duration)
@@ -40,7 +44,16 @@ io.on('connection', (socket) => {
   socket.on('webrtc:ready', (payload) => {
     const apptId = payload?.appointmentId;
     if (apptId) {
+      // Broadcast to everyone else in the room that this peer is ready
       socket.to(`appt:${apptId}`).emit('webrtc:peer-ready', payload);
+    }
+  });
+
+  // Patient or doctor can request a fresh offer from the doctor
+  socket.on('webrtc:request-offer', (payload) => {
+    const apptId = payload?.appointmentId;
+    if (apptId) {
+      socket.to(`appt:${apptId}`).emit('webrtc:request-offer', payload);
     }
   });
 
