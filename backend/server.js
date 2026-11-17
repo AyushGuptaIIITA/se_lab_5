@@ -74,6 +74,7 @@ app.use('/api/prescriptions',  require('./routes/prescriptions'));
 app.use('/api/medical-records',require('./routes/medicalRecords'));
 app.use('/api/admin',          require('./routes/admin'));
 app.use('/api/leaves',         require('./routes/leaves'));
+app.use('/api/notifications',  require('./routes/notifications'));
 
 // Health check
 app.get('/api/health', (req, res) => {

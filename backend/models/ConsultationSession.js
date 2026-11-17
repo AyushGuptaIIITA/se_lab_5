@@ -41,7 +41,20 @@ const consultationSessionSchema = new mongoose.Schema({
   messages: [messageSchema],
   networkEvents: [networkEventSchema],
   signals: [signalSchema],
-  duration: { type: Number }
+  duration: { type: Number },
+  // Transcription fields for patient speech-to-text
+  patientTranscript: { type: String, default: '' },
+  transcriptSegments: [{
+    text: { type: String },
+    start: { type: Number },
+    end: { type: Number },
+    confidence: { type: Number }
+  }],
+  transcriptionStatus: {
+    type: String,
+    enum: ['not_started', 'in_progress', 'completed', 'failed'],
+    default: 'not_started'
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('ConsultationSession', consultationSessionSchema);

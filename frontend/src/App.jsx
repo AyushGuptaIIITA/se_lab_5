@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 // Auth pages
 import Login from './pages/Login';
@@ -36,6 +37,7 @@ import AdminDelegation from './pages/admin/AdminDelegation';
 // Shared
 import Profile from './pages/Profile';
 import PrescriptionView from './pages/shared/PrescriptionView';
+import Notifications from './pages/Notifications';
 
 // ─── Loading Spinner ────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -129,6 +131,7 @@ function AppRoutes() {
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/prescription/:prescriptionId" element={<ProtectedRoute roles={['patient', 'doctor', 'admin']}><PrescriptionView /></ProtectedRoute>} />
         <Route path="/prescription/appointment/:appointmentId" element={<ProtectedRoute roles={['patient', 'doctor', 'admin']}><PrescriptionView /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
 
         {/* ── Catch-all ── */}
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -142,9 +145,11 @@ export default function App() {
     <AuthProvider>
       <LanguageProvider>
         <SocketProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
+          <NotificationProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </NotificationProvider>
         </SocketProvider>
       </LanguageProvider>
     </AuthProvider>

@@ -8,6 +8,7 @@ const createAuditLog = require('../middleware/auditLog');
 const { sendToPharmacy } = require('../utils/pharmacyAdapter');
 const { CLINICAL_DRUGS, DRUG_INTERACTIONS, CLINICAL_TEMPLATES } = require('../utils/drugData');
 const emit = require('../utils/emit');
+const NotificationService = require('../services/notificationService');
 
 const router = express.Router();
 
@@ -218,6 +219,28 @@ router.post('/', auth, doctorOnly, async (req, res) => {
         doctorId: req.user._id.toString(),
         prescriptionId: prescription._id.toString()
       });
+    }
+
+    // Create in-app notification for patient (with real-time emit)
+    try {
+      await NotificationService.create({
+        recipientId: appointment.patient._id,
+        actorId: req.user._id,
+        type: 'PRESCRIPTION_CREATED',
+        title: 'New Prescription Ready',
+        message: `Dr. ${req.user.name} has issued a new e-prescription for your consultation.`,
+        data: {
+          prescriptionId: prescription._id,
+          appointmentId: appointment._id,
+          doctorName: req.user.name,
+          diagnosis: diagnosis
+        },
+        priority: 'high',
+        actionUrl: `/prescription/appointment/${appointmentId}`,
+        req: req
+      });
+    } catch (notificationErr) {
+      console.warn('Failed to create prescription notification:', notificationErr.message);
     }
   } catch (err) {
     console.error('Create prescription error:', err);

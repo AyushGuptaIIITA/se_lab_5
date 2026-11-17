@@ -5,6 +5,7 @@ const Appointment = require('../models/Appointment');
 const { auth, doctorOnly } = require('../middleware/auth');
 const createAuditLog = require('../middleware/auditLog');
 const emit = require('../utils/emit');
+const transcriptionService = require('../services/transcriptionService');
 
 const router = express.Router();
 
@@ -721,6 +722,186 @@ router.post('/predict-disease', auth, async (req, res) => {
   } catch (err) {
     console.error('Disease prediction error:', err);
     res.status(500).json({ message: 'Server error during disease prediction analysis.' });
+  }
+});
+
+// POST /api/consultation/:sessionId/transcribe/start — Start patient transcription session (doctor only)
+router.post('/:sessionId/transcribe/start', auth, doctorOnly, async (req, res) => {
+  try {
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Consultation session not found.' });
+    }
+
+    if (session.doctor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Start transcription service session
+    const result = await transcriptionService.startSession(req.params.sessionId, {
+      language: 'en',
+      medicalVocabulary: true
+    });
+
+    // Update session status
+    session.transcriptionStatus = 'in_progress';
+    await session.save();
+
+    // Audit log
+    try {
+      await createAuditLog(
+        'PATIENT_TRANSCRIPTION_STARTED',
+        req.user._id,
+        req.user.role,
+        req.user.name,
+        'ConsultationSession',
+        session._id,
+        { sessionId: session._id.toString() },
+        req.ip
+      );
+    } catch (auditErr) {
+      console.warn('Audit log error:', auditErr.message);
+    }
+
+    res.json({
+      message: 'Transcription session started.',
+      transcription: result
+    });
+  } catch (err) {
+    console.error('Start transcription error:', err);
+    res.status(500).json({ message: err.message || 'Server error starting transcription.' });
+  }
+});
+
+// POST /api/consultation/:sessionId/transcribe/chunk — Send audio chunk for transcription
+router.post('/:sessionId/transcribe/chunk', auth, async (req, res) => {
+  try {
+    const { audioBase64, metadata } = req.body;
+    
+    if (!audioBase64) {
+      return res.status(400).json({ message: 'audioBase64 is required.' });
+    }
+
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Consultation session not found.' });
+    }
+
+    // Only doctor can send chunks (they capture patient's remote audio)
+    if (session.doctor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Process chunk through transcription service
+    const result = await transcriptionService.processChunk(
+      req.params.sessionId,
+      audioBase64,
+      metadata || {}
+    );
+
+    res.json({
+      message: 'Audio chunk processed.',
+      transcription: result
+    });
+  } catch (err) {
+    console.error('Process transcription chunk error:', err);
+    res.status(500).json({ message: err.message || 'Server error processing audio chunk.' });
+  }
+});
+
+// POST /api/consultation/:sessionId/transcribe/end — Finalize transcription and get full transcript
+router.post('/:sessionId/transcribe/end', auth, doctorOnly, async (req, res) => {
+  try {
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Consultation session not found.' });
+    }
+
+    if (session.doctor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Finalize transcription
+    const result = await transcriptionService.finalizeSession(req.params.sessionId);
+
+    // Save transcript to consultation session
+    session.patientTranscript = result.transcript;
+    session.transcriptSegments = result.segments;
+    session.transcriptionStatus = 'completed';
+    await session.save();
+
+    // Audit log
+    try {
+      await createAuditLog(
+        'PATIENT_TRANSCRIPTION_COMPLETED',
+        req.user._id,
+        req.user.role,
+        req.user.name,
+        'ConsultationSession',
+        session._id,
+        {
+          sessionId: session._id.toString(),
+          wordCount: result.wordCount,
+          duration: result.duration
+        },
+        req.ip
+      );
+    } catch (auditErr) {
+      console.warn('Audit log error:', auditErr.message);
+    }
+
+    res.json({
+      message: 'Transcription completed.',
+      transcript: result.transcript,
+      segments: result.segments,
+      wordCount: result.wordCount,
+      duration: result.duration
+    });
+  } catch (err) {
+    console.error('End transcription error:', err);
+    
+    // Update session status to failed
+    try {
+      const session = await ConsultationSession.findById(req.params.sessionId);
+      if (session) {
+        session.transcriptionStatus = 'failed';
+        await session.save();
+      }
+    } catch (e) {}
+
+    res.status(500).json({ message: err.message || 'Server error finalizing transcription.' });
+  }
+});
+
+// GET /api/consultation/:sessionId/transcript — Get current transcript
+router.get('/:sessionId/transcript', auth, async (req, res) => {
+  try {
+    const session = await ConsultationSession.findById(req.params.sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Consultation session not found.' });
+    }
+
+    const userId = req.user._id.toString();
+    if (
+      req.user.role !== 'admin' &&
+      session.doctor.toString() !== userId &&
+      session.patient.toString() !== userId
+    ) {
+      return res.status(403).json({ message: 'Access denied.' });
+    }
+
+    // Get real-time transcript from service if active
+    const serviceTranscript = await transcriptionService.getTranscript(req.params.sessionId);
+
+    res.json({
+      transcript: session.patientTranscript || serviceTranscript.transcript,
+      segments: session.transcriptSegments || serviceTranscript.segments,
+      status: session.transcriptionStatus,
+      chunkCount: serviceTranscript.chunkCount || 0
+    });
+  } catch (err) {
+    console.error('Get transcript error:', err);
+    res.status(500).json({ message: 'Server error fetching transcript.' });
   }
 });
 

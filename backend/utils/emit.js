@@ -2,6 +2,7 @@
  * emit.js — Helper to broadcast Socket.IO events from any route.
  * Usage: const emit = require('../utils/emit');
  *        emit(req, 'appointment:updated', { appointmentId, ... });
+ *        emitToUser(req, userId, 'notification:new', { ... });
  *
  * Emits to:
  *  - broadcast (all connected clients): for global dashboards
@@ -23,4 +24,21 @@ function emit(req, event, payload) {
   }
 }
 
-module.exports = emit;
+/**
+ * Emit event to a specific user's personal room
+ * @param {Object} req - Express request object
+ * @param {string} userId - Target user ID
+ * @param {string} event - Event name
+ * @param {Object} payload - Event payload
+ */
+function emitToUser(req, userId, event, payload) {
+  try {
+    const io = req.app.get('io');
+    if (!io || !userId) return;
+    io.to(`user:${userId}`).emit(event, payload);
+  } catch (e) {
+    console.warn('Socket emitToUser error:', e.message);
+  }
+}
+
+module.exports = { emit, emitToUser };

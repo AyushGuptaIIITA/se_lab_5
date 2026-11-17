@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  Video, VideoOff, Mic, MicOff, PhoneOff, AlertTriangle, 
-  Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare, 
+import {
+  Video, VideoOff, Mic, MicOff, PhoneOff, AlertTriangle,
+  Loader2, User, FileText, Clock, RefreshCw, Send, MessageSquare,
   ExternalLink, CheckCircle, ArrowLeft, XCircle, Calendar,
   Brain, TrendingUp, AlertCircle, Zap, Radio, Square, Activity,
   ScreenShare, ShieldCheck, Sparkles, Stethoscope
@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { formatAppointmentDate } from '../../utils/dateUtils';
 import { useSocket } from '../../contexts/SocketContext';
+import { usePatientAudioCapture } from '../../hooks/usePatientAudioCapture';
 
 // ── Virtual Media Generators for Seamless Multi-Client & Hardware In-Use Fallbacks ──
 // When physical camera is locked by another window/tab on Windows ("Could not start video source"),
@@ -146,6 +147,8 @@ export default function ConsultationRoom() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null); // Store remote stream for patient audio capture
+  const [remoteStream, setRemoteStream] = useState(null); // State for remote stream to pass to hook
   const peerConnectionRef = useRef(null);
   const pendingSignalsRef = useRef([]);       // signals that arrived before PC existed
   const processedSignalKeysRef = useRef(new Set());
@@ -185,6 +188,17 @@ export default function ConsultationRoom() {
   // Keep sessionRef in sync
   useEffect(() => { sessionRef.current = session; }, [session]);
 
+  // ─── Patient Audio Capture Hook (for AI transcription) ───────────────────────
+  const {
+    isCapturing: isPatientAudioCapturing,
+    transcript: patientTranscript,
+    segments: patientTranscriptSegments,
+    error: patientAudioError,
+    startCapture: startPatientAudioCapture,
+    stopCapture: stopPatientAudioCapture,
+    fetchTranscript: fetchPatientTranscript
+  } = usePatientAudioCapture(sessionRef.current?._id, remoteStream);
+
   // ─── Native WebRTC Video Engine (Unlimited Session Duration - up to 1+ hour) ───
   const signalKey = useCallback((sig) => {
     if (!sig?.type) return '';
@@ -214,6 +228,9 @@ export default function ConsultationRoom() {
     const remoteStream = event.streams?.[0];
     if (remoteStream) {
       if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
+      // Store remote stream for patient audio capture
+      remoteStreamRef.current = remoteStream;
+      setRemoteStream(remoteStream);
     } else if (event.track) {
       let media = el.srcObject;
       if (!(media instanceof MediaStream)) {
@@ -222,6 +239,11 @@ export default function ConsultationRoom() {
       }
       if (!media.getTracks().some((t) => t.id === event.track.id)) {
         media.addTrack(event.track);
+      }
+      // If we got a track but no stream, create one from the track
+      if (!remoteStreamRef.current && media instanceof MediaStream) {
+        remoteStreamRef.current = media;
+        setRemoteStream(media);
       }
     }
 
@@ -644,119 +666,68 @@ export default function ConsultationRoom() {
     )];
   };
 
-  // ─── Speech Recognition init & control ───────────────────────────────────
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      setSpeechSupported(true);
+  // ─── Patient Audio Capture for AI Transcription ────────────────────────────
+  // Replaces old doctor's microphone speech recognition with patient's remote audio
+  const [isPatientAudioActive, setIsPatientAudioActive] = useState(false);
+  const [patientAudioError, setPatientAudioError] = useState(null);
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;        // keep listening across pauses
-      recognition.interimResults = true;    // show partial results live
-      recognition.lang = 'en-IN';           // Indian English; falls back to en-US
-      recognition.maxAlternatives = 1;
+  // Handle transcript updates from patient audio capture
+  const handlePatientTranscriptUpdate = useCallback((transcript) => {
+    // Extract and show detected medical keywords
+    const kws = extractMedicalKeywords(transcript);
+    setSpeechKeywords(kws);
 
-      recognition.onresult = (event) => {
-        let interim = '';
-        let finalChunk = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalChunk += transcript + ' ';
-          } else {
-            interim += transcript;
-          }
-        }
-
-        // Update live (interim) display
-        setLiveTranscript(interim);
-
-        // Accumulate confirmed (final) text
-        if (finalChunk) {
-          const updated = fullTranscriptRef.current + finalChunk;
-          fullTranscriptRef.current = updated;
-          setFullTranscript(updated);
-
-          // Extract and show detected medical keywords
-          const kws = extractMedicalKeywords(updated);
-          setSpeechKeywords(kws);
-
-          // Auto-trigger ML analysis 4 seconds after last spoken chunk
-          if (autoAnalyze) {
-            clearTimeout(autoAnalyzeTimerRef.current);
-            autoAnalyzeTimerRef.current = setTimeout(() => {
-              runMlPredictionWithSpeech(updated);
-            }, 4000);
-          }
-        }
-      };
-
-      recognition.onerror = (e) => {
-        // 'no-speech' is benign — just means silence; restart quietly
-        if (e.error === 'no-speech') return;
-        if (e.error === 'not-allowed') {
-          setAlert({ type: 'error', message: 'Microphone access denied. Please allow mic permissions to use AI speech analysis.' });
-          setIsListening(false);
-        }
-      };
-
-      recognition.onend = () => {
-        // Auto-restart if still supposed to be listening (interrupted by browser)
-        if (recognitionRef.current && recognitionRef.current._shouldListen) {
-          try { recognitionRef.current.start(); } catch {}
-        }
-      };
-
-      recognitionRef.current = recognition;
-      recognitionRef.current._shouldListen = false;
-    }
-
-    return () => {
-      stopSpeechRecognition();
+    // Auto-trigger ML analysis 4 seconds after last spoken chunk
+    if (autoAnalyze) {
       clearTimeout(autoAnalyzeTimerRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      autoAnalyzeTimerRef.current = setTimeout(() => {
+        runMlPredictionWithSpeech(transcript);
+      }, 4000);
+    }
+  }, [autoAnalyze]);
 
-  const startSpeechRecognition = () => {
-    if (!recognitionRef.current || isListening) return;
+  const startPatientAudioCaptureHandler = async () => {
+    if (isPatientAudioActive || !remoteStream) return;
     try {
-      recognitionRef.current._shouldListen = true;
-      recognitionRef.current.start();
-      setIsListening(true);
+      setPatientAudioError(null);
+      await startPatientAudioCapture(handlePatientTranscriptUpdate);
+      setIsPatientAudioActive(true);
       setShowMlPanel(true);
     } catch (e) {
-      console.warn('Speech recognition start error:', e);
+      console.warn('Patient audio capture start error:', e);
+      setPatientAudioError(e.message || 'Failed to start patient audio capture');
     }
   };
 
-  const stopSpeechRecognition = () => {
-    if (!recognitionRef.current) return;
-    recognitionRef.current._shouldListen = false;
-    try { recognitionRef.current.stop(); } catch {}
-    setIsListening(false);
-    setLiveTranscript('');
-    clearTimeout(autoAnalyzeTimerRef.current);
+  const stopPatientAudioCaptureHandler = async () => {
+    if (!isPatientAudioActive) return;
+    try {
+      await stopPatientAudioCapture();
+      setIsPatientAudioActive(false);
+      // The final transcript will be available in patientTranscript state
+    } catch (e) {
+      console.warn('Patient audio capture stop error:', e);
+      setPatientAudioError(e.message || 'Failed to stop patient audio capture');
+    }
   };
 
-  const toggleSpeechRecognition = () => {
-    if (isListening) {
-      stopSpeechRecognition();
+  const togglePatientAudioCapture = () => {
+    if (isPatientAudioActive) {
+      stopPatientAudioCaptureHandler();
     } else {
-      startSpeechRecognition();
+      startPatientAudioCaptureHandler();
     }
   };
 
-  // ─── ML prediction that also includes speech transcript ───────────────────
+  // ─── ML prediction that also includes patient speech transcript ────────────
   const runMlPredictionWithSpeech = useCallback(async (speechText) => {
     setMlLoading(true);
     setShowMlPanel(true);
     try {
       const chatTranscript = messages.map(m => ({ text: m.text || '' }));
-      // Include speech transcript as extra "chat" entries so it's analysed too
+      // Include patient speech transcript as extra "chat" entries so it's analysed too
       if (speechText) {
-        chatTranscript.push({ text: '[Live Speech] ' + speechText });
+        chatTranscript.push({ text: '[Patient Speech] ' + speechText });
       }
       const res = await api.post('/consultation/predict-disease', {
         symptoms: appointment?.symptoms || '',
@@ -1078,8 +1049,8 @@ export default function ConsultationRoom() {
 
   // ─── ML Disease Prediction ────────────────────────────────────────────────
   const runMlPrediction = async () => {
-    // Include accumulated speech transcript in analysis
-    await runMlPredictionWithSpeech(fullTranscriptRef.current);
+    // Include patient speech transcript in analysis
+    await runMlPredictionWithSpeech(patientTranscript);
   };
 
   const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -1570,21 +1541,31 @@ export default function ConsultationRoom() {
                 >
                   <RefreshCw className="w-3.5 h-3.5 text-blue-600" /><span>Reconnect Video</span>
                 </button>
-                {/* Live Speech Recognition toggle — doctor only */}
-                {isDoctor && speechSupported && (
+                {/* Patient Audio Capture toggle — doctor only */}
+                {isDoctor && remoteStream && (
                   <button
-                    onClick={toggleSpeechRecognition}
+                    onClick={togglePatientAudioCapture}
                     className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
-                      isListening
+                      isPatientAudioActive
                         ? 'bg-rose-600 text-white border-rose-600 shadow-sm shadow-rose-300 animate-pulse'
                         : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                     }`}
-                    title={isListening ? 'Stop live speech AI analysis' : 'Start live speech AI analysis'}
+                    title={isPatientAudioActive ? 'Stop patient audio AI transcription' : 'Start patient audio AI transcription'}
+                    disabled={patientAudioError && !isPatientAudioActive}
                   >
-                    {isListening
+                    {isPatientAudioActive
                       ? <><Square className="w-3.5 h-3.5" /><span>Stop AI Listen</span></>
-                      : <><Radio className="w-3.5 h-3.5" /><span>Live AI Listen</span></>
+                      : <><Radio className="w-3.5 h-3.5" /><span>AI Listen (Patient)</span></>
                     }
+                  </button>
+                )}
+                {isDoctor && !remoteStream && (
+                  <button
+                    className="flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-50 border-slate-200 cursor-not-allowed"
+                    title="Waiting for patient to join..."
+                    disabled
+                  >
+                    <Radio className="w-3.5 h-3.5" /><span>AI Listen (Patient)</span>
                   </button>
                 )}
               </div>
@@ -1628,18 +1609,18 @@ export default function ConsultationRoom() {
               </div>
             </div>
 
-            {/* ── Live Speech Transcript Panel (doctor + speechSupported) ── */}
-            {isDoctor && (isListening || fullTranscript) && (
+            {/* ── Patient Audio Transcript Panel (doctor + patient audio) ── */}
+            {isDoctor && (isPatientAudioActive || patientTranscript) && (
               <div className="glass-panel rounded-2xl bg-white shadow-card border border-emerald-100 overflow-hidden">
                 <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    {isListening && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />}
+                    {isPatientAudioActive && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping flex-shrink-0" />}
                     <Activity className="w-4 h-4 text-emerald-600" />
                     <span className="text-sm font-bold text-emerald-900">
-                      {isListening ? 'Live Speech Capture — AI is listening...' : 'Speech Transcript (Captured)'}
+                      {isPatientAudioActive ? 'Patient Audio Capture — AI is transcribing...' : 'Patient Transcript (Captured)'}
                     </span>
                     <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full">
-                      {fullTranscript.split(/\s+/).filter(Boolean).length} words
+                      {patientTranscript.split(/\s+/).filter(Boolean).length} words
                     </span>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -1652,22 +1633,15 @@ export default function ConsultationRoom() {
                         <div className={`w-3 h-3 bg-white rounded-full shadow mt-0.5 transition-transform ${autoAnalyze ? 'translate-x-4' : 'translate-x-1'}`} />
                       </div>
                     </label>
-                    <button onClick={() => { setFullTranscript(''); fullTranscriptRef.current = ''; setSpeechKeywords([]); }} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">Clear</button>
+                    <button onClick={() => { setSpeechKeywords([]); }} className="text-xs text-slate-400 hover:text-slate-600 font-semibold">Clear Keywords</button>
                   </div>
                 </div>
 
                 <div className="p-3 space-y-2">
-                  {/* Live partial (interim) text */}
-                  {isListening && liveTranscript && (
-                    <p className="text-xs text-slate-400 italic border-l-2 border-emerald-300 pl-2 animate-pulse">
-                      {liveTranscript}
-                    </p>
-                  )}
-
-                  {/* Confirmed transcript */}
-                  {fullTranscript && (
+                  {/* Patient transcript from backend */}
+                  {patientTranscript && (
                     <div className="max-h-24 overflow-y-auto">
-                      <p className="text-xs text-slate-700 leading-relaxed">{fullTranscript}</p>
+                      <p className="text-xs text-slate-700 leading-relaxed">{patientTranscript}</p>
                     </div>
                   )}
 
@@ -1688,10 +1662,17 @@ export default function ConsultationRoom() {
                     </div>
                   )}
 
-                  {autoAnalyze && isListening && (
+                  {autoAnalyze && isPatientAudioActive && (
                     <p className="text-[10px] text-slate-400 flex items-center space-x-1">
                       <Brain className="w-3 h-3 text-purple-400" />
-                      <span>AI diagnosis updates automatically 4 seconds after each spoken segment</span>
+                      <span>AI diagnosis updates automatically 4 seconds after each patient speech segment</span>
+                    </p>
+                  )}
+                  
+                  {patientAudioError && (
+                    <p className="text-xs text-rose-500 flex items-center space-x-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>{patientAudioError}</span>
                     </p>
                   )}
                 </div>

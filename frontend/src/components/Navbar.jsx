@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Stethoscope, LayoutDashboard, Calendar, Search, FileText, Users, BarChart3, Shield, LogOut, User, Globe, Menu, X, Sparkles, Video, Pill } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import NotificationBell from './NotificationBell';
 
 function NavLink({ to, icon: Icon, label, onClick }) {
   const location = useLocation();
@@ -194,6 +195,9 @@ export default function Navbar() {
 
           {/* Right section */}
           <div className="hidden lg:flex items-center space-x-2 flex-shrink-0">
+            {/* Notification Bell */}
+            <NotificationBell />
+            
             {/* Multi-Language Dropdown */}
             <div className="relative flex-shrink-0">
               <button
@@ -306,21 +310,24 @@ export default function Navbar() {
             />
           ))}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-            <Link
-              to="/profile"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center space-x-2 text-xs font-bold text-slate-800"
-            >
-              <User className="w-4 h-4 text-blue-600" />
-              <span>{user.name}</span>
-            </Link>
-            <button
-              onClick={logout}
-              className="flex items-center space-x-1 text-xs font-bold text-rose-600 hover:text-rose-700"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>{t('logout')}</span>
-            </button>
+            <NotificationBell />
+            <div className="flex items-center space-x-4">
+              <Link
+                to="/profile"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center space-x-2 text-xs font-bold text-slate-800"
+              >
+                <User className="w-4 h-4 text-blue-600" />
+                <span>{user.name}</span>
+              </Link>
+              <button
+                onClick={logout}
+                className="flex items-center space-x-1 text-xs font-bold text-rose-600 hover:text-rose-700"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>{t('logout')}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
